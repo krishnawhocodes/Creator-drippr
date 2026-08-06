@@ -21,6 +21,7 @@ import {
   LogOut,
   Menu,
   ChevronDown,
+  ShieldAlert,
 } from "lucide-react";
 
 const NAV = [
@@ -32,14 +33,20 @@ const NAV = [
   { to: "/settings", label: "Settings", icon: Settings },
 ];
 
+const ADMIN_UIDS = (import.meta.env.VITE_ADMIN_UIDS || "")
+  .split(",")
+  .map((s: string) => s.trim())
+  .filter(Boolean);
+
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
-  const { profile } = useAuth();
+  const { profile, user } = useAuth();
+  const isAdmin = user && ADMIN_UIDS.includes(user.uid);
 
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 px-6 py-5">
         <span className="text-xl font-bold tracking-tight text-white">
-          drippr
+          Drippr
         </span>
         <span className="rounded bg-white/10 px-2 py-0.5 text-xs font-medium text-white/70">
           creator
@@ -66,13 +73,34 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             {label}
           </NavLink>
         ))}
+
+        {/* Admin Panel link — only visible to admins */}
+        {isAdmin && (
+          <>
+            <Separator className="my-2 bg-white/10" />
+            <NavLink
+              to="/admin"
+              onClick={onNavigate}
+              className={({ isActive }) =>
+                `flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                  isActive
+                    ? "bg-red-500/30 text-red-200"
+                    : "text-red-400/80 hover:bg-red-500/20 hover:text-red-300"
+                }`
+              }
+            >
+              <ShieldAlert className="h-4 w-4" />
+              Admin Panel
+            </NavLink>
+          </>
+        )}
       </nav>
 
-      {profile && (
+      {profile?.affiliateCode && (
         <div className="border-t border-white/10 px-4 py-4">
           <div className="text-xs text-white/40">Affiliate Code</div>
           <div className="mt-1 font-mono text-sm font-semibold text-white">
-            {profile.affiliateCode || "—"}
+            {profile.affiliateCode}
           </div>
         </div>
       )}

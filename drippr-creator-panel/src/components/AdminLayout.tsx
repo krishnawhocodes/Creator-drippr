@@ -15,7 +15,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 px-6 py-5">
         <span className="text-xl font-bold tracking-tight text-white">
-          drippr
+          Drippr
         </span>
         <span className="rounded bg-red-500/20 px-2 py-0.5 text-xs font-medium text-red-300">
           admin

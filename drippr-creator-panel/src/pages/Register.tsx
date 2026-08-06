@@ -96,7 +96,7 @@ export default function Register() {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl font-bold">
-            Join <span className="tracking-tight">drippr</span> as a Creator
+            Join <span className="tracking-tight">Drippr</span> as a Creator
           </CardTitle>
           <CardDescription>
             Create your account to start earning with your influence.
