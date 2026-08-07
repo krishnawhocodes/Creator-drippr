@@ -75,6 +75,11 @@ export default function Register() {
         followerCount: "",
         idProofType: "",
         idProofNumber: "",
+        idProofFileUrl: "",
+        affiliateCode: "",
+        bio: "",
+        city: "",
+        state: "",
       };
 
       await setDoc(doc(db, "creators", cred.user.uid), profile);

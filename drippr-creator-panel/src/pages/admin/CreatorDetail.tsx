@@ -1,33 +1,28 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { useAuth } from "@/providers/AuthProvider";
 import {
-  fetchCreatorDetail,
+  getCreator,
   approveCreator,
   rejectCreator,
-  checkAffiliateCodeUnique,
-} from "@/lib/api";
-import { generateAffiliateCode, formatDate } from "@/lib/utils";
+  isAffiliateCodeAvailable,
+  generateUniqueAffiliateCode,
+} from "@/lib/adminDb";
+import { formatDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   ArrowLeft,
@@ -36,75 +31,124 @@ import {
   RefreshCw,
   ExternalLink,
   FileText,
+  AlertCircle,
+  Loader2,
+  Copy,
+  Check,
 } from "lucide-react";
 import type { CreatorProfile } from "@/types";
 
-const statusColor: Record<string, string> = {
-  pending: "bg-yellow-100 text-yellow-800",
-  submitted: "bg-blue-100 text-blue-800",
-  approved: "bg-green-100 text-green-800",
-  rejected: "bg-red-100 text-red-800",
+const STATUS_STYLE: Record<string, string> = {
+  pending: "bg-amber-100 text-amber-800 hover:bg-amber-100",
+  submitted: "bg-blue-100 text-blue-800 hover:bg-blue-100",
+  approved: "bg-emerald-100 text-emerald-800 hover:bg-emerald-100",
+  rejected: "bg-red-100 text-red-800 hover:bg-red-100",
 };
 
 export default function CreatorDetail() {
   const { uid } = useParams<{ uid: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const [creator, setCreator] = useState<CreatorProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [copied, setCopied] = useState(false);
 
-  // Approve dialog
+  // Approve flow
   const [showApprove, setShowApprove] = useState(false);
-  const [affiliateCode, setAffiliateCode] = useState("");
-  const [codeChecking, setCodeChecking] = useState(false);
-  const [codeAvailable, setCodeAvailable] = useState<boolean | null>(null);
+  const [code, setCode] = useState("");
+  const [checking, setChecking] = useState(false);
+  const [available, setAvailable] = useState<boolean | null>(null);
+  const [generating, setGenerating] = useState(false);
   const [approving, setApproving] = useState(false);
 
-  // Reject dialog
+  // Reject flow
   const [showReject, setShowReject] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [rejecting, setRejecting] = useState(false);
 
-  useEffect(() => {
+  async function load() {
     if (!uid) return;
-    fetchCreatorDetail(uid)
-      .then((data) => setCreator(data.creator))
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
-  }, [uid]);
-
-  function handleGenerateCode() {
-    if (!creator) return;
-    const code = generateAffiliateCode(creator.fullName);
-    setAffiliateCode(code);
-    setCodeAvailable(null);
+    setLoading(true);
+    try {
+      const c = await getCreator(uid);
+      setCreator(c);
+      setError(c ? "" : "Creator not found.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load creator.");
+    } finally {
+      setLoading(false);
+    }
   }
 
-  async function handleCheckCode() {
-    if (!affiliateCode.trim()) return;
-    setCodeChecking(true);
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uid]);
+
+  // Debounced uniqueness check as the admin types
+  useEffect(() => {
+    if (!showApprove) return;
+    const trimmed = code.trim().toUpperCase();
+    if (!trimmed) {
+      setAvailable(null);
+      return;
+    }
+    setChecking(true);
+    const t = setTimeout(async () => {
+      try {
+        const ok = await isAffiliateCodeAvailable(trimmed, uid);
+        setAvailable(ok);
+      } catch {
+        setAvailable(null);
+      } finally {
+        setChecking(false);
+      }
+    }, 450);
+    return () => clearTimeout(t);
+  }, [code, showApprove, uid]);
+
+  async function openApprove() {
+    setShowApprove(true);
+    setError("");
+    setGenerating(true);
     try {
-      const data = await checkAffiliateCodeUnique(affiliateCode.trim().toUpperCase());
-      setCodeAvailable(data.available);
+      const generated = await generateUniqueAffiliateCode(
+        creator?.fullName || "DRIP",
+      );
+      setCode(generated);
     } catch {
-      setCodeAvailable(null);
+      setCode("");
     } finally {
-      setCodeChecking(false);
+      setGenerating(false);
+    }
+  }
+
+  async function regenerate() {
+    setGenerating(true);
+    setAvailable(null);
+    try {
+      setCode(await generateUniqueAffiliateCode(creator?.fullName || "DRIP"));
+    } finally {
+      setGenerating(false);
     }
   }
 
   async function handleApprove() {
-    if (!uid || !affiliateCode.trim()) return;
+    if (!uid || !code.trim()) return;
     setApproving(true);
+    setError("");
     try {
-      await approveCreator(uid, affiliateCode.trim().toUpperCase());
-      // Reload
-      const data = await fetchCreatorDetail(uid);
-      setCreator(data.creator);
+      await approveCreator(uid, code.trim(), user?.email || "admin");
       setShowApprove(false);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Approval failed.");
+      setSuccess(
+        `Creator approved. Affiliate code ${code.trim().toUpperCase()} assigned and saved to Firestore.`,
+      );
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Approval failed.");
     } finally {
       setApproving(false);
     }
@@ -113,23 +157,33 @@ export default function CreatorDetail() {
   async function handleReject() {
     if (!uid) return;
     setRejecting(true);
+    setError("");
     try {
-      await rejectCreator(uid, rejectReason.trim());
-      const data = await fetchCreatorDetail(uid);
-      setCreator(data.creator);
+      await rejectCreator(uid, rejectReason.trim(), user?.email || "admin");
       setShowReject(false);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Rejection failed.");
+      setRejectReason("");
+      setSuccess("Verification rejected. The creator has been notified in-app.");
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Rejection failed.");
     } finally {
       setRejecting(false);
     }
   }
 
+  function copyCode() {
+    if (!creator?.affiliateCode) return;
+    navigator.clipboard.writeText(creator.affiliateCode);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
   if (loading) {
     return (
       <div className="space-y-4">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-64 w-full" />
+        <Skeleton className="h-9 w-56" />
+        <Skeleton className="h-52 w-full" />
+        <Skeleton className="h-40 w-full" />
       </div>
     );
   }
@@ -137,248 +191,327 @@ export default function CreatorDetail() {
   if (!creator) {
     return (
       <div className="space-y-4">
-        <Button variant="ghost" onClick={() => navigate("/admin")}>
+        <Button variant="ghost" onClick={() => navigate("/admin/creators")}>
           <ArrowLeft className="mr-2 h-4 w-4" /> Back
         </Button>
-        <p className="text-destructive">Creator not found.</p>
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{error || "Creator not found."}</AlertDescription>
+        </Alert>
       </div>
     );
   }
 
+  const canDecide =
+    creator.verificationStatus === "submitted" ||
+    creator.verificationStatus === "rejected";
+
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => navigate("/admin")}>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => navigate("/admin/creators")}
+        >
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        <div className="flex-1">
-          <h1 className="text-2xl font-bold">{creator.fullName}</h1>
-          <p className="text-sm text-muted-foreground">{creator.email}</p>
+        <div className="min-w-0 flex-1">
+          <h1 className="truncate text-2xl font-bold tracking-tight">
+            {creator.fullName || "Unnamed Creator"}
+          </h1>
+          <p className="truncate text-sm text-gray-500">{creator.email}</p>
         </div>
-        <Badge className={statusColor[creator.verificationStatus]}>
+        <Badge className={STATUS_STYLE[creator.verificationStatus]}>
           {creator.verificationStatus}
         </Badge>
       </div>
 
       {error && (
         <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
+      {success && (
+        <Alert className="border-emerald-200 bg-emerald-50 text-emerald-900">
+          <CheckCircle className="h-4 w-4 text-emerald-600" />
+          <AlertDescription>{success}</AlertDescription>
+        </Alert>
+      )}
 
-      {/* Profile info */}
+      {/* Affiliate code (once approved) */}
+      {creator.affiliateCode && (
+        <Card className="border-0 bg-gradient-to-br from-zinc-900 to-zinc-700 text-white">
+          <CardContent className="flex flex-wrap items-center justify-between gap-4 py-6">
+            <div>
+              <p className="text-xs uppercase tracking-widest text-white/50">
+                Assigned Affiliate Code
+              </p>
+              <p className="mt-1.5 font-mono text-3xl font-bold tracking-[0.2em]">
+                {creator.affiliateCode}
+              </p>
+              {creator.affiliateCodeGeneratedAt && (
+                <p className="mt-1 text-xs text-white/50">
+                  Assigned {formatDate(creator.affiliateCodeGeneratedAt)}
+                  {creator.verificationReviewedBy
+                    ? ` by ${creator.verificationReviewedBy}`
+                    : ""}
+                </p>
+              )}
+            </div>
+            <Button
+              variant="secondary"
+              onClick={copyCode}
+              className="bg-white/10 text-white hover:bg-white/20"
+            >
+              {copied ? (
+                <>
+                  <Check className="mr-1.5 h-4 w-4" /> Copied
+                </>
+              ) : (
+                <>
+                  <Copy className="mr-1.5 h-4 w-4" /> Copy
+                </>
+              )}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Profile */}
       <Card>
-        <CardHeader>
-          <CardTitle>Profile Details</CardTitle>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Profile Details</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <Label className="text-muted-foreground">Phone</Label>
-            <p className="font-medium">{creator.phone || "—"}</p>
-          </div>
-          <div>
-            <Label className="text-muted-foreground">Joined</Label>
-            <p className="font-medium">{formatDate(creator.createdAt)}</p>
-          </div>
-          <div>
-            <Label className="text-muted-foreground">Platform</Label>
-            <p className="font-medium">{creator.platform || "—"}</p>
-          </div>
-          <div>
-            <Label className="text-muted-foreground">Profile Link</Label>
+        <CardContent className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          <Field label="Full Name" value={creator.fullName} />
+          <Field label="Email" value={creator.email} />
+          <Field label="Phone" value={creator.phone} />
+          <Field label="Platform" value={creator.platform} />
+          <Field label="Follower Count" value={creator.followerCount} />
+          <Field label="Content Niche" value={creator.contentNiche} />
+          <Field label="City" value={creator.city} />
+          <Field label="State" value={creator.state} />
+          <Field label="Joined" value={formatDate(creator.createdAt)} />
+          <div className="min-w-0">
+            <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
+              Profile Link
+            </p>
             {creator.profileLink ? (
               <a
                 href={creator.profileLink}
                 target="_blank"
                 rel="noreferrer"
-                className="flex items-center gap-1 font-medium text-primary hover:underline"
+                className="mt-0.5 inline-flex items-center gap-1 font-medium text-blue-600 hover:underline"
               >
-                View Profile <ExternalLink className="h-3 w-3" />
+                Open Profile <ExternalLink className="h-3 w-3" />
               </a>
             ) : (
-              <p>—</p>
+              <p className="mt-0.5 font-medium text-gray-400">—</p>
             )}
           </div>
-          <div>
-            <Label className="text-muted-foreground">Content Niche</Label>
-            <p className="font-medium">{creator.contentNiche || "—"}</p>
-          </div>
-          <div>
-            <Label className="text-muted-foreground">Follower Count</Label>
-            <p className="font-medium">{creator.followerCount || "—"}</p>
-          </div>
+          {creator.bio && (
+            <div className="sm:col-span-2 lg:col-span-3">
+              <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
+                Bio
+              </p>
+              <p className="mt-0.5 text-sm">{creator.bio}</p>
+            </div>
+          )}
         </CardContent>
       </Card>
 
       {/* ID Proof */}
       <Card>
-        <CardHeader>
-          <CardTitle>ID Proof</CardTitle>
-          <CardDescription>Submitted identity verification.</CardDescription>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Identity Verification</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <Label className="text-muted-foreground">ID Type</Label>
-              <p className="font-medium">{creator.idProofType || "—"}</p>
-            </div>
-            <div>
-              <Label className="text-muted-foreground">ID Number</Label>
-              <p className="font-mono font-medium">
-                {creator.idProofNumber || "—"}
-              </p>
-            </div>
+        <CardContent className="space-y-4">
+          <div className="grid gap-5 sm:grid-cols-3">
+            <Field label="ID Type" value={creator.idProofType} />
+            <Field label="ID Number" value={creator.idProofNumber} mono />
+            <Field
+              label="Submitted"
+              value={
+                creator.verificationSubmittedAt
+                  ? formatDate(creator.verificationSubmittedAt)
+                  : "—"
+              }
+            />
           </div>
-          {creator.idProofFileUrl && (
+
+          {creator.idProofFileUrl ? (
             <a
               href={creator.idProofFileUrl}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium hover:bg-muted"
+              className="inline-flex items-center gap-2 rounded-lg border px-3.5 py-2.5 text-sm font-medium transition-colors hover:bg-gray-50"
             >
               <FileText className="h-4 w-4" />
               View Uploaded Document
-              <ExternalLink className="h-3 w-3" />
+              <ExternalLink className="h-3 w-3 text-gray-400" />
             </a>
+          ) : (
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                No ID document was uploaded by this creator.
+              </AlertDescription>
+            </Alert>
           )}
+
+          {creator.verificationStatus === "rejected" &&
+            creator.verificationRejectionReason && (
+              <Alert variant="destructive">
+                <XCircle className="h-4 w-4" />
+                <AlertDescription>
+                  Rejected: {creator.verificationRejectionReason}
+                </AlertDescription>
+              </Alert>
+            )}
         </CardContent>
       </Card>
 
-      {/* Affiliate code */}
-      {creator.affiliateCode && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Affiliate Code</CardTitle>
+      {/* Decision */}
+      {canDecide && (
+        <Card className="border-blue-200 bg-blue-50/40">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Verification Decision</CardTitle>
           </CardHeader>
-          <CardContent>
-            <code className="rounded-lg bg-zinc-900 px-4 py-2 text-lg font-bold tracking-widest text-white">
-              {creator.affiliateCode}
-            </code>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-gray-600">
+              Approving will generate a unique affiliate code, save it to
+              Firestore, and make it immediately visible on the creator's
+              dashboard.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={openApprove}>
+                <CheckCircle className="mr-1.5 h-4 w-4" /> Approve & Assign Code
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setShowReject(true)}
+                className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+              >
+                <XCircle className="mr-1.5 h-4 w-4" /> Reject
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Actions */}
-      {creator.verificationStatus === "submitted" && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Review Actions</CardTitle>
-            <CardDescription>
-              Approve or reject this creator's verification.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex gap-3">
-            <Button onClick={() => { setShowApprove(true); handleGenerateCode(); }}>
-              <CheckCircle className="mr-2 h-4 w-4" /> Approve
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => setShowReject(true)}
-            >
-              <XCircle className="mr-2 h-4 w-4" /> Reject
-            </Button>
-          </CardContent>
-        </Card>
+      {creator.verificationStatus === "pending" && (
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            This creator hasn't submitted their verification details yet.
+          </AlertDescription>
+        </Alert>
       )}
 
-      {/* Approve Dialog */}
+      {/* Approve dialog */}
       <Dialog open={showApprove} onOpenChange={setShowApprove}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Approve Creator</DialogTitle>
+            <DialogTitle>Approve {creator.fullName}</DialogTitle>
           </DialogHeader>
+
           <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Assign a unique affiliate code for{" "}
-              <strong>{creator.fullName}</strong>.
+            <p className="text-sm text-gray-500">
+              A unique code has been generated. You can edit it — uniqueness is
+              checked automatically.
             </p>
 
             <div className="space-y-2">
               <Label>Affiliate Code</Label>
               <div className="flex gap-2">
                 <Input
-                  value={affiliateCode}
-                  onChange={(e) => {
-                    setAffiliateCode(e.target.value.toUpperCase());
-                    setCodeAvailable(null);
-                  }}
-                  placeholder="e.g. DRIP4K"
-                  className="font-mono uppercase"
+                  value={code}
+                  onChange={(e) =>
+                    setCode(e.target.value.toUpperCase().replace(/\s/g, ""))
+                  }
+                  placeholder="e.g. KRISH4B2C"
+                  className="font-mono text-base uppercase tracking-wider"
+                  maxLength={20}
                 />
                 <Button
+                  type="button"
                   variant="outline"
                   size="icon"
-                  onClick={handleGenerateCode}
-                  title="Generate random code"
+                  onClick={regenerate}
+                  disabled={generating}
+                  title="Generate a new code"
                 >
-                  <RefreshCw className="h-4 w-4" />
+                  {generating ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4" />
+                  )}
                 </Button>
               </div>
+
+              {/* Live availability feedback */}
+              <div className="min-h-[20px] text-sm">
+                {checking ? (
+                  <span className="flex items-center gap-1.5 text-gray-500">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking
+                    availability…
+                  </span>
+                ) : available === true ? (
+                  <span className="flex items-center gap-1.5 text-emerald-600">
+                    <CheckCircle className="h-3.5 w-3.5" /> Code is available
+                  </span>
+                ) : available === false ? (
+                  <span className="flex items-center gap-1.5 text-red-600">
+                    <XCircle className="h-3.5 w-3.5" /> Already in use — pick
+                    another
+                  </span>
+                ) : null}
+              </div>
             </div>
-
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleCheckCode}
-              disabled={!affiliateCode.trim() || codeChecking}
-            >
-              {codeChecking ? "Checking…" : "Check Uniqueness"}
-            </Button>
-
-            {codeAvailable === true && (
-              <p className="text-sm text-green-600">
-                ✓ Code is available.
-              </p>
-            )}
-            {codeAvailable === false && (
-              <p className="text-sm text-red-600">
-                ✗ Code already in use. Try another.
-              </p>
-            )}
           </div>
+
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setShowApprove(false)}
-            >
+            <Button variant="outline" onClick={() => setShowApprove(false)}>
               Cancel
             </Button>
             <Button
               onClick={handleApprove}
-              disabled={approving || !affiliateCode.trim() || codeAvailable === false}
+              disabled={
+                approving || !code.trim() || available === false || checking
+              }
             >
-              {approving ? "Approving…" : "Approve & Assign Code"}
+              {approving ? (
+                <>
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> Approving…
+                </>
+              ) : (
+                "Approve & Assign"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Reject Dialog */}
+      {/* Reject dialog */}
       <Dialog open={showReject} onOpenChange={setShowReject}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Reject Verification</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Provide a reason for rejecting{" "}
-              <strong>{creator.fullName}</strong>'s verification.
-            </p>
-            <div className="space-y-2">
-              <Label>Reason</Label>
-              <Textarea
-                value={rejectReason}
-                onChange={(e) => setRejectReason(e.target.value)}
-                placeholder="e.g. ID proof image is unclear…"
-                rows={3}
-              />
-            </div>
+          <div className="space-y-2">
+            <Label>Reason (shown to the creator)</Label>
+            <Textarea
+              rows={3}
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder="e.g. The uploaded ID document is blurry and unreadable…"
+            />
           </div>
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setShowReject(false)}
-            >
+            <Button variant="outline" onClick={() => setShowReject(false)}>
               Cancel
             </Button>
             <Button
@@ -386,11 +519,36 @@ export default function CreatorDetail() {
               onClick={handleReject}
               disabled={rejecting}
             >
-              {rejecting ? "Rejecting…" : "Reject"}
+              {rejecting ? "Rejecting…" : "Reject Verification"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  value,
+  mono,
+}: {
+  label: string;
+  value?: string;
+  mono?: boolean;
+}) {
+  return (
+    <div className="min-w-0">
+      <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
+        {label}
+      </p>
+      <p
+        className={`mt-0.5 break-words font-medium ${mono ? "font-mono" : ""} ${
+          !value ? "text-gray-400" : ""
+        }`}
+      >
+        {value || "—"}
+      </p>
     </div>
   );
 }

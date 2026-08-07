@@ -3,12 +3,12 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "@/providers/AuthProvider";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -33,18 +33,13 @@ const NAV = [
   { to: "/settings", label: "Settings", icon: Settings },
 ];
 
-const ADMIN_UIDS = (import.meta.env.VITE_ADMIN_UIDS || "")
-  .split(",")
-  .map((s: string) => s.trim())
-  .filter(Boolean);
-
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
-  const { profile, user } = useAuth();
-  const isAdmin = user && ADMIN_UIDS.includes(user.uid);
+  const { profile, isAdmin } = useAuth();
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 px-6 py-5">
+    <div className="flex h-full flex-col overflow-hidden">
+      {/* Brand */}
+      <div className="flex flex-shrink-0 items-center gap-2 px-6 py-5">
         <span className="text-xl font-bold tracking-tight text-white">
           Drippr
         </span>
@@ -53,9 +48,10 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         </span>
       </div>
 
-      <Separator className="bg-white/10" />
+      <div className="h-px flex-shrink-0 bg-white/10" />
 
-      <nav className="flex-1 space-y-1 px-3 py-4">
+      {/* Nav — this is the only scrollable region */}
+      <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 py-4">
         {NAV.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
@@ -69,53 +65,48 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               }`
             }
           >
-            <Icon className="h-4 w-4" />
+            <Icon className="h-4 w-4 flex-shrink-0" />
             {label}
           </NavLink>
         ))}
 
-        {/* Admin Panel link — only visible to admins */}
         {isAdmin && (
           <>
-            <Separator className="my-2 bg-white/10" />
+            <div className="my-3 h-px bg-white/10" />
             <NavLink
               to="/admin"
               onClick={onNavigate}
-              className={({ isActive }) =>
-                `flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                  isActive
-                    ? "bg-red-500/30 text-red-200"
-                    : "text-red-400/80 hover:bg-red-500/20 hover:text-red-300"
-                }`
-              }
+              className="flex items-center gap-3 rounded-lg bg-red-500/15 px-3 py-2.5 text-sm font-semibold text-red-300 transition-colors hover:bg-red-500/25 hover:text-red-200"
             >
-              <ShieldAlert className="h-4 w-4" />
+              <ShieldAlert className="h-4 w-4 flex-shrink-0" />
               Admin Panel
             </NavLink>
           </>
         )}
       </nav>
 
-      {profile?.affiliateCode && (
-        <div className="border-t border-white/10 px-4 py-4">
+      {/* Affiliate code footer */}
+      {profile?.affiliateCode ? (
+        <div className="flex-shrink-0 border-t border-white/10 px-4 py-4">
           <div className="text-xs text-white/40">Affiliate Code</div>
           <div className="mt-1 font-mono text-sm font-semibold text-white">
             {profile.affiliateCode}
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
 
 export default function DashboardLayout() {
-  const { user, profile, signOut } = useAuth();
+  const { user, profile, isAdmin, signOut } = useAuth();
   const navigate = useNavigate();
   const [sheetOpen, setSheetOpen] = useState(false);
 
   const initials = profile?.fullName
     ? profile.fullName
         .split(" ")
+        .filter(Boolean)
         .map((w) => w[0])
         .join("")
         .toUpperCase()
@@ -130,7 +121,7 @@ export default function DashboardLayout() {
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
       {/* Desktop sidebar */}
-      <aside className="hidden w-64 flex-shrink-0 bg-zinc-900 lg:block">
+      <aside className="hidden h-screen w-64 flex-shrink-0 overflow-hidden bg-zinc-900 lg:block">
         <SidebarContent />
       </aside>
 
@@ -140,20 +131,23 @@ export default function DashboardLayout() {
           <Button
             variant="ghost"
             size="icon"
-            className="fixed left-4 top-4 z-40"
+            className="fixed left-4 top-3 z-40"
           >
             <Menu className="h-5 w-5" />
           </Button>
         </SheetTrigger>
-        <SheetContent side="left" className="w-64 bg-zinc-900 p-0">
+        <SheetContent
+          side="left"
+          className="w-64 overflow-hidden border-0 bg-zinc-900 p-0"
+        >
           <SidebarContent onNavigate={() => setSheetOpen(false)} />
         </SheetContent>
       </Sheet>
 
-      {/* Main area */}
-      <div className="flex flex-1 flex-col overflow-hidden">
+      {/* Main column */}
+      <div className="flex h-screen min-w-0 flex-1 flex-col overflow-hidden">
         {/* Top bar */}
-        <header className="flex h-16 items-center justify-end border-b bg-white px-6">
+        <header className="flex h-16 flex-shrink-0 items-center justify-end border-b bg-white px-6">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-gray-100">
@@ -162,13 +156,24 @@ export default function DashboardLayout() {
                     {initials}
                   </AvatarFallback>
                 </Avatar>
-                <span className="hidden font-medium md:inline">
+                <span className="hidden max-w-[200px] truncate font-medium md:inline">
                   {profile?.fullName || user?.email}
                 </span>
-                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                <ChevronDown className="h-4 w-4 flex-shrink-0 text-gray-500" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent align="end" className="w-52">
+              {isAdmin && (
+                <>
+                  <DropdownMenuItem
+                    onClick={() => navigate("/admin")}
+                    className="font-medium text-red-600 focus:text-red-600"
+                  >
+                    <ShieldAlert className="mr-2 h-4 w-4" /> Admin Panel
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              )}
               <DropdownMenuItem onClick={() => navigate("/settings")}>
                 <Settings className="mr-2 h-4 w-4" /> Settings
               </DropdownMenuItem>
@@ -179,9 +184,11 @@ export default function DashboardLayout() {
           </DropdownMenu>
         </header>
 
-        {/* Page content */}
-        <main className="flex-1 overflow-y-auto p-6">
-          <Outlet />
+        {/* Scrollable content — the ONLY other scroll region */}
+        <main className="min-h-0 flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-6xl p-6">
+            <Outlet />
+          </div>
         </main>
       </div>
     </div>

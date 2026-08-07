@@ -7,66 +7,146 @@ import {
 } from "firebase/auth";
 import { db, auth } from "@/lib/firebase";
 import { useAuth } from "@/providers/AuthProvider";
+import { createChangeRequest, createSupportTicket } from "@/lib/adminDb";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
 import PasswordStrength, {
   passwordPassesAll,
 } from "@/components/PasswordStrength";
+import { Info, KeyRound, User, LifeBuoy, CheckCircle } from "lucide-react";
+
+/** Fields that require admin approval once the creator is verified */
+const LOCKED_FIELDS = ["fullName", "platform", "profileLink", "followerCount"];
+
+const FIELD_LABELS: Record<string, string> = {
+  fullName: "Full Name",
+  phone: "Phone",
+  platform: "Platform",
+  profileLink: "Profile Link",
+  followerCount: "Follower Count",
+  bio: "Bio",
+  city: "City",
+  state: "State",
+};
 
 export default function Settings() {
   const { user, profile, refreshProfile } = useAuth();
+  const isVerified = profile?.verificationStatus === "approved";
 
-  // Profile form
-  const [profileForm, setProfileForm] = useState({
+  const [form, setForm] = useState({
     fullName: profile?.fullName || "",
     phone: profile?.phone || "",
+    platform: profile?.platform || "",
+    profileLink: profile?.profileLink || "",
+    followerCount: profile?.followerCount || "",
     bio: profile?.bio || "",
     city: profile?.city || "",
     state: profile?.state || "",
   });
-  const [profileSaving, setProfileSaving] = useState(false);
-  const [profileSuccess, setProfileSuccess] = useState(false);
-  const [profileError, setProfileError] = useState("");
+  const [changeReason, setChangeReason] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState("");
+  const [saveErr, setSaveErr] = useState("");
 
-  // Password form
-  const [pwForm, setPwForm] = useState({
-    current: "",
-    newPw: "",
-    confirm: "",
-  });
+  const [pwForm, setPwForm] = useState({ current: "", newPw: "", confirm: "" });
   const [pwSaving, setPwSaving] = useState(false);
   const [pwSuccess, setPwSuccess] = useState(false);
   const [pwError, setPwError] = useState("");
 
+  const [ticket, setTicket] = useState({ subject: "", message: "" });
+  const [ticketSending, setTicketSending] = useState(false);
+  const [ticketSent, setTicketSent] = useState(false);
+  const [ticketErr, setTicketErr] = useState("");
+
+  function set(key: string) {
+    return (
+      e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
+    ) => setForm((prev) => ({ ...prev, [key]: e.target.value }));
+  }
+
+  /** Fields the creator has actually modified */
+  function getDirtyFields(): Record<string, string> {
+    const dirty: Record<string, string> = {};
+    Object.entries(form).forEach(([k, v]) => {
+      const original = (profile as unknown as Record<string, string>)?.[k] || "";
+      if (v !== original) dirty[k] = v;
+    });
+    return dirty;
+  }
+
   async function saveProfile(e: React.FormEvent) {
     e.preventDefault();
-    if (!user) return;
-    setProfileError("");
-    setProfileSuccess(false);
-    setProfileSaving(true);
+    if (!user || !profile) return;
+    setSaveErr("");
+    setSaveMsg("");
 
+    const dirty = getDirtyFields();
+    if (!Object.keys(dirty).length) {
+      setSaveMsg("No changes to save.");
+      return;
+    }
+
+    setSaving(true);
     try {
-      await updateDoc(doc(db, "creators", user.uid), {
-        ...profileForm,
-        updatedAt: Date.now(),
-      });
+      const lockedDirty = Object.keys(dirty).filter((k) =>
+        LOCKED_FIELDS.includes(k),
+      );
+
+      // Verified creators need approval for locked fields
+      if (isVerified && lockedDirty.length > 0) {
+        const previous: Record<string, string> = {};
+        const changes: Record<string, string> = {};
+        lockedDirty.forEach((k) => {
+          previous[k] =
+            (profile as unknown as Record<string, string>)[k] || "";
+          changes[k] = dirty[k];
+        });
+
+        await createChangeRequest({
+          creatorUid: user.uid,
+          creatorName: profile.fullName,
+          creatorEmail: profile.email,
+          changes,
+          previous,
+          reason: changeReason.trim(),
+        });
+
+        // Free fields can still be saved immediately
+        const freeDirty = Object.fromEntries(
+          Object.entries(dirty).filter(([k]) => !LOCKED_FIELDS.includes(k)),
+        );
+        if (Object.keys(freeDirty).length) {
+          await updateDoc(doc(db, "creators", user.uid), {
+            ...freeDirty,
+            updatedAt: Date.now(),
+          });
+        }
+
+        setChangeReason("");
+        setSaveMsg(
+          `Change request submitted for ${lockedDirty
+            .map((f) => FIELD_LABELS[f] || f)
+            .join(", ")}. An admin will review it shortly.`,
+        );
+      } else {
+        await updateDoc(doc(db, "creators", user.uid), {
+          ...dirty,
+          updatedAt: Date.now(),
+        });
+        setSaveMsg("Profile updated successfully.");
+      }
+
       await refreshProfile();
-      setProfileSuccess(true);
-    } catch (err: unknown) {
-      setProfileError(err instanceof Error ? err.message : "Update failed.");
+    } catch (err) {
+      setSaveErr(err instanceof Error ? err.message : "Update failed.");
     } finally {
-      setProfileSaving(false);
+      setSaving(false);
     }
   }
 
@@ -76,7 +156,7 @@ export default function Settings() {
     setPwSuccess(false);
 
     if (!passwordPassesAll(pwForm.newPw)) {
-      setPwError("New password does not meet requirements.");
+      setPwError("New password does not meet all requirements.");
       return;
     }
     if (pwForm.newPw !== pwForm.confirm) {
@@ -86,119 +166,188 @@ export default function Settings() {
 
     setPwSaving(true);
     try {
-      const currentUser = auth.currentUser;
-      if (!currentUser || !currentUser.email) throw new Error("Not signed in.");
-
-      const cred = EmailAuthProvider.credential(
-        currentUser.email,
-        pwForm.current,
-      );
-      await reauthenticateWithCredential(currentUser, cred);
-      await updatePassword(currentUser, pwForm.newPw);
-
+      const cu = auth.currentUser;
+      if (!cu?.email) throw new Error("Not signed in.");
+      const cred = EmailAuthProvider.credential(cu.email, pwForm.current);
+      await reauthenticateWithCredential(cu, cred);
+      await updatePassword(cu, pwForm.newPw);
       setPwForm({ current: "", newPw: "", confirm: "" });
       setPwSuccess(true);
-    } catch (err: unknown) {
+    } catch (err) {
       const msg = err instanceof Error ? err.message : "Password change failed.";
-      if (msg.includes("wrong-password") || msg.includes("invalid-credential")) {
-        setPwError("Current password is incorrect.");
-      } else {
-        setPwError(msg);
-      }
+      setPwError(
+        msg.includes("wrong-password") || msg.includes("invalid-credential")
+          ? "Current password is incorrect."
+          : msg,
+      );
     } finally {
       setPwSaving(false);
     }
   }
 
+  async function sendTicket(e: React.FormEvent) {
+    e.preventDefault();
+    if (!user || !profile) return;
+    setTicketErr("");
+    setTicketSent(false);
+    setTicketSending(true);
+    try {
+      await createSupportTicket({
+        creatorUid: user.uid,
+        creatorName: profile.fullName,
+        creatorEmail: profile.email,
+        subject: ticket.subject.trim(),
+        message: ticket.message.trim(),
+      });
+      setTicket({ subject: "", message: "" });
+      setTicketSent(true);
+    } catch (err) {
+      setTicketErr(
+        err instanceof Error ? err.message : "Failed to send message.",
+      );
+    } finally {
+      setTicketSending(false);
+    }
+  }
+
+  const dirtyLocked = Object.keys(getDirtyFields()).filter((k) =>
+    LOCKED_FIELDS.includes(k),
+  );
+
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
+    <div className="mx-auto max-w-3xl space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Settings</h1>
-        <p className="text-muted-foreground">
-          Manage your profile and account settings.
+        <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
+        <p className="text-sm text-gray-500">
+          Manage your profile, security, and support requests.
         </p>
       </div>
 
       {/* Profile */}
       <Card>
-        <CardHeader>
-          <CardTitle>Profile Information</CardTitle>
-          <CardDescription>Update your personal details.</CardDescription>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <User className="h-4 w-4" /> Profile Information
+          </CardTitle>
+          {isVerified && (
+            <CardDescription>
+              Some fields require admin approval since your account is verified.
+            </CardDescription>
+          )}
         </CardHeader>
         <CardContent>
           <form onSubmit={saveProfile} className="space-y-4">
-            {profileError && (
+            {saveErr && (
               <Alert variant="destructive">
-                <AlertDescription>{profileError}</AlertDescription>
+                <AlertDescription>{saveErr}</AlertDescription>
               </Alert>
             )}
-            {profileSuccess && (
-              <Alert>
-                <AlertDescription>Profile updated.</AlertDescription>
+            {saveMsg && (
+              <Alert className="border-emerald-200 bg-emerald-50 text-emerald-900">
+                <CheckCircle className="h-4 w-4 text-emerald-600" />
+                <AlertDescription>{saveMsg}</AlertDescription>
               </Alert>
             )}
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="fullName">Full Name</Label>
-                <Input
-                  id="fullName"
-                  value={profileForm.fullName}
-                  onChange={(e) =>
-                    setProfileForm((p) => ({ ...p, fullName: e.target.value }))
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="phone">Phone</Label>
-                <Input
-                  id="phone"
-                  value={profileForm.phone}
-                  onChange={(e) =>
-                    setProfileForm((p) => ({ ...p, phone: e.target.value }))
-                  }
-                />
-              </div>
+              <FieldInput
+                id="fullName"
+                label="Full Name"
+                value={form.fullName}
+                onChange={set("fullName")}
+                locked={isVerified}
+              />
+              <FieldInput
+                id="phone"
+                label="Phone"
+                value={form.phone}
+                onChange={set("phone")}
+              />
+              <FieldInput
+                id="platform"
+                label="Platform"
+                value={form.platform}
+                onChange={set("platform")}
+                locked={isVerified}
+              />
+              <FieldInput
+                id="followerCount"
+                label="Follower Count"
+                value={form.followerCount}
+                onChange={set("followerCount")}
+                locked={isVerified}
+              />
             </div>
+
+            <FieldInput
+              id="profileLink"
+              label="Profile Link"
+              value={form.profileLink}
+              onChange={set("profileLink")}
+              locked={isVerified}
+            />
 
             <div className="space-y-2">
               <Label htmlFor="bio">Bio</Label>
               <Textarea
                 id="bio"
-                value={profileForm.bio}
-                onChange={(e) =>
-                  setProfileForm((p) => ({ ...p, bio: e.target.value }))
-                }
                 rows={3}
-                placeholder="Tell us about yourself..."
+                value={form.bio}
+                onChange={set("bio")}
+                placeholder="Tell us about yourself…"
               />
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="city">City</Label>
-                <Input
-                  id="city"
-                  value={profileForm.city}
-                  onChange={(e) =>
-                    setProfileForm((p) => ({ ...p, city: e.target.value }))
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="state">State</Label>
-                <Input
-                  id="state"
-                  value={profileForm.state}
-                  onChange={(e) =>
-                    setProfileForm((p) => ({ ...p, state: e.target.value }))
-                  }
-                />
-              </div>
+              <FieldInput
+                id="city"
+                label="City"
+                value={form.city}
+                onChange={set("city")}
+              />
+              <FieldInput
+                id="state"
+                label="State"
+                value={form.state}
+                onChange={set("state")}
+              />
             </div>
 
-            <Button type="submit" disabled={profileSaving}>
-              {profileSaving ? "Saving…" : "Save Changes"}
+            {/* Reason required when requesting locked-field changes */}
+            {isVerified && dirtyLocked.length > 0 && (
+              <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-4">
+                <div className="flex items-start gap-2">
+                  <Info className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600" />
+                  <p className="text-sm text-amber-900">
+                    You're changing{" "}
+                    <strong>
+                      {dirtyLocked
+                        .map((f) => FIELD_LABELS[f] || f)
+                        .join(", ")}
+                    </strong>
+                    . These need admin approval.
+                  </p>
+                </div>
+                <Label htmlFor="reason" className="text-amber-900">
+                  Reason for change
+                </Label>
+                <Textarea
+                  id="reason"
+                  rows={2}
+                  value={changeReason}
+                  onChange={(e) => setChangeReason(e.target.value)}
+                  placeholder="e.g. I rebranded my Instagram handle…"
+                  className="bg-white"
+                />
+              </div>
+            )}
+
+            <Button type="submit" disabled={saving}>
+              {saving
+                ? "Saving…"
+                : isVerified && dirtyLocked.length > 0
+                  ? "Submit for Approval"
+                  : "Save Changes"}
             </Button>
           </form>
         </CardContent>
@@ -206,11 +355,12 @@ export default function Settings() {
 
       <Separator />
 
-      {/* Change Password */}
+      {/* Password */}
       <Card>
-        <CardHeader>
-          <CardTitle>Change Password</CardTitle>
-          <CardDescription>Update your account password.</CardDescription>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <KeyRound className="h-4 w-4" /> Change Password
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={changePassword} className="space-y-4">
@@ -220,15 +370,15 @@ export default function Settings() {
               </Alert>
             )}
             {pwSuccess && (
-              <Alert>
+              <Alert className="border-emerald-200 bg-emerald-50 text-emerald-900">
                 <AlertDescription>Password changed successfully.</AlertDescription>
               </Alert>
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="currentPw">Current Password</Label>
+              <Label htmlFor="curPw">Current Password</Label>
               <Input
-                id="currentPw"
+                id="curPw"
                 type="password"
                 value={pwForm.current}
                 onChange={(e) =>
@@ -237,7 +387,6 @@ export default function Settings() {
                 required
               />
             </div>
-
             <div className="space-y-2">
               <Label htmlFor="newPw">New Password</Label>
               <Input
@@ -251,11 +400,10 @@ export default function Settings() {
               />
               <PasswordStrength password={pwForm.newPw} />
             </div>
-
             <div className="space-y-2">
-              <Label htmlFor="confirmPw">Confirm New Password</Label>
+              <Label htmlFor="confPw">Confirm New Password</Label>
               <Input
-                id="confirmPw"
+                id="confPw"
                 type="password"
                 value={pwForm.confirm}
                 onChange={(e) =>
@@ -275,20 +423,129 @@ export default function Settings() {
         </CardContent>
       </Card>
 
-      {/* Account info */}
+      <Separator />
+
+      {/* Support */}
       <Card>
-        <CardHeader>
-          <CardTitle>Account</CardTitle>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <LifeBuoy className="h-4 w-4" /> Contact Support
+          </CardTitle>
+          <CardDescription>
+            Have a question? Send a message to the Drippr team.
+          </CardDescription>
         </CardHeader>
-        <CardContent className="text-sm text-muted-foreground">
-          <p>
-            Email: <span className="font-medium text-foreground">{user?.email}</span>
-          </p>
-          <p>
-            UID: <span className="font-mono text-xs">{user?.uid}</span>
-          </p>
+        <CardContent>
+          <form onSubmit={sendTicket} className="space-y-4">
+            {ticketErr && (
+              <Alert variant="destructive">
+                <AlertDescription>{ticketErr}</AlertDescription>
+              </Alert>
+            )}
+            {ticketSent && (
+              <Alert className="border-emerald-200 bg-emerald-50 text-emerald-900">
+                <CheckCircle className="h-4 w-4 text-emerald-600" />
+                <AlertDescription>
+                  Message sent. Our team will get back to you soon.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="subject">Subject</Label>
+              <Input
+                id="subject"
+                value={ticket.subject}
+                onChange={(e) =>
+                  setTicket((t) => ({ ...t, subject: e.target.value }))
+                }
+                placeholder="What do you need help with?"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="message">Message</Label>
+              <Textarea
+                id="message"
+                rows={4}
+                value={ticket.message}
+                onChange={(e) =>
+                  setTicket((t) => ({ ...t, message: e.target.value }))
+                }
+                placeholder="Describe your issue in detail…"
+                required
+              />
+            </div>
+
+            <Button
+              type="submit"
+              disabled={
+                ticketSending || !ticket.subject.trim() || !ticket.message.trim()
+              }
+            >
+              {ticketSending ? "Sending…" : "Send Message"}
+            </Button>
+          </form>
         </CardContent>
       </Card>
+
+      {/* Account info */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Account</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-gray-500">Email</span>
+            <span className="truncate font-medium">{user?.email}</span>
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-gray-500">Status</span>
+            <Badge variant="secondary">
+              {profile?.verificationStatus || "pending"}
+            </Badge>
+          </div>
+          {profile?.affiliateCode && (
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-gray-500">Affiliate Code</span>
+              <code className="rounded bg-gray-100 px-2 py-0.5 font-mono text-xs font-semibold">
+                {profile.affiliateCode}
+              </code>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function FieldInput({
+  id,
+  label,
+  value,
+  onChange,
+  locked,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  locked?: boolean;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <Label htmlFor={id}>{label}</Label>
+        {locked && (
+          <Badge
+            variant="secondary"
+            className="h-4 px-1.5 py-0 text-[10px] font-normal"
+          >
+            needs approval
+          </Badge>
+        )}
+      </div>
+      <Input id={id} value={value} onChange={onChange} />
     </div>
   );
 }

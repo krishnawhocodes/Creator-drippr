@@ -4,6 +4,7 @@ async function authedFetch(url: string, opts: RequestInit = {}) {
   const user = auth.currentUser;
   if (!user) throw new Error("Not authenticated");
   const token = await user.getIdToken();
+
   const res = await fetch(url, {
     ...opts,
     headers: {
@@ -12,59 +13,44 @@ async function authedFetch(url: string, opts: RequestInit = {}) {
       ...(opts.headers || {}),
     },
   });
+
   if (!res.ok) {
-    const body = await res.text();
-    throw new Error(body || res.statusText);
+    let message = res.statusText;
+    try {
+      const body = await res.json();
+      message = body?.error || message;
+    } catch {
+      /* non-JSON error body */
+    }
+    throw new Error(message);
   }
+
   return res.json();
 }
 
-// ── Admin API ──
-
-export async function adminAction(action: string, body: Record<string, unknown> = {}) {
-  return authedFetch(`/api/admin/admin?action=${action}`, {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
-}
-
-export async function fetchAllCreators() {
-  return adminAction("listCreators");
-}
-
-export async function fetchCreatorDetail(uid: string) {
-  return adminAction("getCreator", { uid });
-}
-
-export async function approveCreator(uid: string, affiliateCode: string) {
-  return adminAction("approveCreator", { uid, affiliateCode });
-}
-
-export async function rejectCreator(uid: string, reason: string) {
-  return adminAction("rejectCreator", { uid, reason });
-}
-
-export async function checkAffiliateCodeUnique(code: string) {
-  return adminAction("checkAffiliateCode", { code });
-}
-
-export async function isAdmin(): Promise<boolean> {
+/**
+ * Shopify analytics for an affiliate code.
+ * Requires the serverless function to be deployed (needs the Shopify
+ * admin token, which must stay server-side). Returns empty analytics
+ * rather than throwing when the API isn't reachable, so the dashboard
+ * still renders in local dev.
+ */
+export async function fetchAnalytics(affiliateCode: string) {
   try {
-    const data = await adminAction("checkAdmin");
-    return data?.isAdmin === true;
+    return await authedFetch(
+      `/api/analytics/shopify?code=${encodeURIComponent(affiliateCode)}`,
+    );
   } catch {
-    return false;
+    return {
+      totalOrders: 0,
+      totalRevenue: 0,
+      currencyCode: "INR",
+      orders: [],
+    };
   }
 }
 
-// ── Analytics ──
-
-export async function fetchAnalytics(affiliateCode: string) {
-  return authedFetch(`/api/analytics/shopify?code=${encodeURIComponent(affiliateCode)}`);
-}
-
-// ── ImageKit Auth ──
-
+/** Signed upload credentials for ImageKit. */
 export async function getImageKitAuth() {
   return authedFetch("/api/imagekit/auth");
 }

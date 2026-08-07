@@ -1,0 +1,95 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ──────────────────────────────────────────────
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Admins are identified by email. Add more emails to this list
+    // as you add administrators.
+    function isAdmin() {
+      return isSignedIn()
+        && request.auth.token.email in [
+             'sachinwhocodes@gmail.com'
+           ];
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    // ── creators ─────────────────────────────────────────────
+    // Creators read/write their own document.
+    // Admins read and write everything (needed to approve/reject).
+    match /creators/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow create: if isOwner(uid);
+      allow update: if isAdmin()
+                    || (isOwner(uid)
+                        // Creators may never set their own affiliate code
+                        // or flip themselves to approved.
+                        && !request.resource.data.diff(resource.data)
+                              .affectedKeys()
+                              .hasAny([
+                                'affiliateCode',
+                                'affiliateCodeGeneratedAt',
+                                'verificationReviewedBy'
+                              ])
+                        && (request.resource.data.verificationStatus
+                              in ['pending', 'submitted']
+                            || request.resource.data.verificationStatus
+                                 == resource.data.verificationStatus));
+      allow delete: if isAdmin();
+    }
+
+    // ── affiliateCodes ───────────────────────────────────────
+    // Uniqueness index. Doc id IS the code.
+    // Anyone signed in may read (needed for the availability check),
+    // only admins may write.
+    match /affiliateCodes/{code} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ── changeRequests ───────────────────────────────────────
+    // Creators create requests for themselves and read their own.
+    // Admins read and update all.
+    match /changeRequests/{requestId} {
+      allow read: if isAdmin()
+                  || (isSignedIn()
+                      && resource.data.creatorUid == request.auth.uid);
+      allow create: if isSignedIn()
+                    && request.resource.data.creatorUid == request.auth.uid
+                    && request.resource.data.status == 'pending';
+      allow update, delete: if isAdmin();
+    }
+
+    // ── supportTickets ───────────────────────────────────────
+    match /supportTickets/{ticketId} {
+      allow read: if isAdmin()
+                  || (isSignedIn()
+                      && resource.data.creatorUid == request.auth.uid);
+      allow create: if isSignedIn()
+                    && request.resource.data.creatorUid == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // ── payments ─────────────────────────────────────────────
+    // Read-only for creators; only admins write payouts.
+    match /payments/{paymentId} {
+      allow read: if isAdmin()
+                  || (isSignedIn()
+                      && resource.data.creatorUid == request.auth.uid);
+      allow write: if isAdmin();
+    }
+
+    // Deny everything else by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

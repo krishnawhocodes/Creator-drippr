@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "@/lib/firebase";
-import { isAdmin } from "@/lib/api";
+import { isAdminUser } from "@/lib/admin";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,11 +28,14 @@ export default function Login() {
     setLoading(true);
 
     try {
-      await signInWithEmailAndPassword(auth, email.trim(), password);
+      const cred = await signInWithEmailAndPassword(
+        auth,
+        email.trim(),
+        password,
+      );
 
-      // Check if admin → redirect to admin panel
-      const admin = await isAdmin();
-      if (admin) {
+      // Admins land on the admin panel, creators on their dashboard
+      if (isAdminUser(cred.user)) {
         navigate("/admin");
       } else {
         navigate("/dashboard");

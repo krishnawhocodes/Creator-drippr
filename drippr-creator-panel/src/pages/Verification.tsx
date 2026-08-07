@@ -136,19 +136,47 @@ export default function Verification() {
   // Already approved
   if (profile?.verificationStatus === "approved") {
     return (
-      <div className="mx-auto max-w-2xl space-y-6">
-        <Card className="border-green-200 bg-green-50">
-          <CardContent className="flex items-center gap-4 py-8">
-            <CheckCircle className="h-10 w-10 text-green-600" />
+      <div className="mx-auto max-w-2xl space-y-5">
+        <Card className="border-emerald-200 bg-emerald-50">
+          <CardContent className="flex items-start gap-4 py-8">
+            <CheckCircle className="h-10 w-10 flex-shrink-0 text-emerald-600" />
             <div>
-              <h2 className="text-lg font-semibold text-green-900">
-                You're Verified!
+              <h2 className="text-lg font-semibold text-emerald-900">
+                You're Verified
               </h2>
-              <p className="text-sm text-green-700">
-                Your creator account has been approved. Your affiliate code is{" "}
-                <strong>{profile.affiliateCode}</strong>.
+              <p className="mt-1 text-sm text-emerald-700">
+                Your creator account has been approved by the Drippr team.
               </p>
             </div>
+          </CardContent>
+        </Card>
+
+        {profile.affiliateCode && (
+          <Card className="border-0 bg-gradient-to-br from-zinc-900 to-zinc-700 text-white">
+            <CardContent className="py-7 text-center">
+              <p className="text-xs uppercase tracking-widest text-white/50">
+                Your Affiliate Code
+              </p>
+              <p className="mt-2 font-mono text-4xl font-bold tracking-[0.2em]">
+                {profile.affiliateCode}
+              </p>
+              <p className="mt-3 text-sm text-white/60">
+                Share this code with your audience — every order using it counts
+                toward your earnings.
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Submitted Details</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4 text-sm sm:grid-cols-2">
+            <ReadOnly label="Platform" value={profile.platform} />
+            <ReadOnly label="Followers" value={profile.followerCount} />
+            <ReadOnly label="Content Niche" value={profile.contentNiche} />
+            <ReadOnly label="ID Type" value={profile.idProofType} />
           </CardContent>
         </Card>
       </div>
@@ -359,6 +387,19 @@ export default function Verification() {
           </form>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function ReadOnly({ label, value }: { label: string; value?: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
+        {label}
+      </p>
+      <p className={`mt-0.5 font-medium ${!value ? "text-gray-400" : ""}`}>
+        {value || "—"}
+      </p>
     </div>
   );
 }

@@ -23,8 +23,8 @@ export function formatDate(dateStr: string | number): string {
   });
 }
 
-export function generateAffiliateCode(name: string): string {
-  const clean = name.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 6);
-  const rand = Math.random().toString(36).substring(2, 6).toUpperCase();
-  return `${clean}${rand}`;
-}
+/**
+ * NOTE: For generating affiliate codes use
+ * `generateUniqueAffiliateCode` from `@/lib/adminDb` — it checks
+ * uniqueness against Firestore before returning.
+ */

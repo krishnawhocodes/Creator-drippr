@@ -1,4 +1,8 @@
-export type VerificationStatus = "pending" | "submitted" | "approved" | "rejected";
+export type VerificationStatus =
+  | "pending"
+  | "submitted"
+  | "approved"
+  | "rejected";
 
 export interface CreatorProfile {
   uid: string;
@@ -12,18 +16,19 @@ export interface CreatorProfile {
   verificationStatus: VerificationStatus;
   verificationSubmittedAt?: number;
   verificationReviewedAt?: number;
+  verificationReviewedBy?: string;
   verificationRejectionReason?: string;
 
   // Platform details
-  platform: string;           // Instagram, YouTube, etc.
+  platform: string;
   profileLink: string;
   contentNiche: string;
   followerCount: string;
 
   // ID proof
-  idProofType: string;        // Aadhaar, PAN, Passport, etc.
+  idProofType: string;
   idProofNumber: string;
-  idProofFileUrl?: string;    // ImageKit URL for uploaded file
+  idProofFileUrl?: string;
 
   // Affiliate
   affiliateCode?: string;
@@ -34,6 +39,49 @@ export interface CreatorProfile {
   bio?: string;
   city?: string;
   state?: string;
+}
+
+export interface AffiliateCodeIndex {
+  code: string;
+  creatorUid: string;
+  createdAt: number;
+  createdBy: string;
+}
+
+export type ChangeRequestStatus = "pending" | "approved" | "rejected";
+
+export interface ChangeRequest {
+  id: string;
+  creatorUid: string;
+  creatorName: string;
+  creatorEmail: string;
+  /** Field → new value pairs the creator wants applied */
+  changes: Record<string, string>;
+  /** Snapshot of the current values, for side-by-side comparison */
+  previous: Record<string, string>;
+  reason: string;
+  status: ChangeRequestStatus;
+  createdAt: number;
+  reviewedAt?: number;
+  reviewedBy?: string;
+  rejectionReason?: string;
+}
+
+export type TicketStatus = "open" | "resolved" | "closed";
+
+export interface SupportTicket {
+  id: string;
+  creatorUid: string;
+  creatorName: string;
+  creatorEmail: string;
+  subject: string;
+  message: string;
+  status: TicketStatus;
+  createdAt: number;
+  adminReply?: string;
+  respondedAt?: number;
+  respondedBy?: string;
+  closedAt?: number;
 }
 
 export interface AffiliateOrder {
@@ -58,6 +106,7 @@ export interface AffiliateAnalytics {
 export interface PaymentRecord {
   id: string;
   creatorUid: string;
+  creatorName?: string;
   amount: number;
   currency: string;
   status: "pending" | "processing" | "completed" | "failed";

@@ -12,12 +12,14 @@ import {
 } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
+import { isAdminUser } from "@/lib/admin";
 import type { CreatorProfile } from "@/types";
 
 interface AuthContextValue {
   user: User | null;
   profile: CreatorProfile | null;
   loading: boolean;
+  isAdmin: boolean;
   refreshProfile: () => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -26,6 +28,7 @@ const AuthContext = createContext<AuthContextValue>({
   user: null,
   profile: null,
   loading: true,
+  isAdmin: false,
   refreshProfile: async () => {},
   signOut: async () => {},
 });
@@ -75,9 +78,18 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     return unsub;
   }, []);
 
+  const isAdmin = isAdminUser(user);
+
   return (
     <AuthContext.Provider
-      value={{ user, profile, loading, refreshProfile, signOut: handleSignOut }}
+      value={{
+        user,
+        profile,
+        loading,
+        isAdmin,
+        refreshProfile,
+        signOut: handleSignOut,
+      }}
     >
       {children}
     </AuthContext.Provider>
