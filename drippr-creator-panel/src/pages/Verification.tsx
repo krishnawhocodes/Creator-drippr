@@ -23,7 +23,14 @@ import {
 } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Upload, CheckCircle, Clock, XCircle, FileText } from "lucide-react";
+import {
+  Upload,
+  CheckCircle,
+  Clock,
+  XCircle,
+  FileText,
+  AlertTriangle,
+} from "lucide-react";
 
 const PLATFORMS = [
   "Instagram",
@@ -107,6 +114,34 @@ export default function Verification() {
     const data = await res.json();
     if (!data?.url) throw new Error("ImageKit did not return a file URL.");
     return data.url as string;
+  }
+
+  /**
+   * Uploads only the ID document, for creators whose form was already
+   * submitted but whose file upload failed at the time.
+   */
+  async function handleDocumentOnlyUpload() {
+    if (!user || !uploadedFile) return;
+    setError("");
+    setUploading(true);
+
+    try {
+      const url = await uploadToImageKit(uploadedFile);
+
+      await updateDoc(doc(db, "creators", user.uid), {
+        idProofFileUrl: url,
+        updatedAt: Date.now(),
+      });
+
+      await refreshProfile();
+      setUploadedFile(null);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Upload failed. Please try again.",
+      );
+    } finally {
+      setUploading(false);
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -225,26 +260,121 @@ export default function Verification() {
   }
 
   // Submitted, awaiting review
-  if (
-    profile?.verificationStatus === "submitted" ||
-    success
-  ) {
+  if (profile?.verificationStatus === "submitted" || success) {
+    const documentMissing = !profile?.idProofFileUrl;
+
     return (
-      <div className="mx-auto max-w-2xl space-y-6">
+      <div className="mx-auto max-w-2xl space-y-5">
         <Card className="border-blue-200 bg-blue-50">
-          <CardContent className="flex items-center gap-4 py-8">
-            <Clock className="h-10 w-10 text-blue-600" />
+          <CardContent className="flex items-start gap-4 py-8">
+            <Clock className="h-10 w-10 flex-shrink-0 text-blue-600" />
             <div>
               <h2 className="text-lg font-semibold text-blue-900">
                 Verification Submitted
               </h2>
-              <p className="text-sm text-blue-700">
+              <p className="mt-1 text-sm text-blue-700">
                 Your details are under review. You'll be notified once your
                 account is approved.
               </p>
             </div>
           </CardContent>
         </Card>
+
+        {/* Submitted details */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Submitted Details</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4 text-sm sm:grid-cols-2">
+            <ReadOnly label="Platform" value={profile?.platform} />
+            <ReadOnly label="Followers" value={profile?.followerCount} />
+            <ReadOnly label="Content Niche" value={profile?.contentNiche} />
+            <ReadOnly label="ID Type" value={profile?.idProofType} />
+            <ReadOnly label="ID Number" value={profile?.idProofNumber} />
+            <div className="min-w-0">
+              <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
+                ID Document
+              </p>
+              {profile?.idProofFileUrl ? (
+                <a
+                  href={profile.idProofFileUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-0.5 inline-flex items-center gap-1 font-medium text-blue-600 hover:underline"
+                >
+                  <FileText className="h-3.5 w-3.5" /> View uploaded file
+                </a>
+              ) : (
+                <p className="mt-0.5 font-medium text-amber-600">
+                  Not uploaded
+                </p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Re-upload path when the document never made it */}
+        {documentMissing && (
+          <Card className="border-amber-200 bg-amber-50/60">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base text-amber-900">
+                <AlertTriangle className="h-4 w-4" />
+                ID Document Missing
+              </CardTitle>
+              <CardDescription className="text-amber-800">
+                Your details were saved, but the document upload didn't
+                complete. Please upload it here — no need to redo the form.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {error && (
+                <Alert variant="destructive">
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*,.pdf"
+                className="hidden"
+                onChange={(e) => setUploadedFile(e.target.files?.[0] || null)}
+              />
+
+              <div
+                className="flex cursor-pointer items-center gap-3 rounded-lg border-2 border-dashed border-amber-300 bg-white p-4 hover:bg-amber-50"
+                onClick={() => fileRef.current?.click()}
+              >
+                {uploadedFile ? (
+                  <>
+                    <FileText className="h-5 w-5 flex-shrink-0 text-emerald-600" />
+                    <span className="truncate text-sm font-medium">
+                      {uploadedFile.name}
+                    </span>
+                    <Badge variant="secondary" className="ml-auto flex-shrink-0">
+                      Ready
+                    </Badge>
+                  </>
+                ) : (
+                  <>
+                    <Upload className="h-5 w-5 flex-shrink-0 text-amber-600" />
+                    <span className="text-sm text-amber-800">
+                      Click to select your ID document (image or PDF)
+                    </span>
+                  </>
+                )}
+              </div>
+
+              <Button
+                onClick={handleDocumentOnlyUpload}
+                disabled={!uploadedFile || uploading}
+                className="w-full"
+              >
+                {uploading ? "Uploading…" : "Upload Document"}
+              </Button>
+            </CardContent>
+          </Card>
+        )}
       </div>
     );
   }

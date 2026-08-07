@@ -1,18 +1,14 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { loadCredentials } from "./_lib/firebaseAdmin.js";
 
 /**
  * Diagnostic endpoint — visit /api/health in a browser.
  *
  * Reports which environment variables are present and well-formed WITHOUT
- * ever revealing their values. Use this to work out why an API route is
- * returning 500.
+ * ever revealing their values.
  */
 
-type Check = {
-  name: string;
-  ok: boolean;
-  detail: string;
-};
+type Check = { name: string; ok: boolean; detail: string };
 
 function checkPresent(name: string, expectedPrefix?: string): Check {
   const raw = (process.env[name] || "").trim();
@@ -20,7 +16,6 @@ function checkPresent(name: string, expectedPrefix?: string): Check {
   if (!raw) {
     return { name, ok: false, detail: "MISSING — not set in this environment" };
   }
-
   if (expectedPrefix && !raw.startsWith(expectedPrefix)) {
     return {
       name,
@@ -28,68 +23,42 @@ function checkPresent(name: string, expectedPrefix?: string): Check {
       detail: `set (${raw.length} chars) but does not start with "${expectedPrefix}"`,
     };
   }
-
   return { name, ok: true, detail: `set (${raw.length} chars)` };
 }
 
-function checkServiceAccount(): Check {
-  const name = "FIREBASE_SERVICE_ACCOUNT_KEY";
-  const raw = process.env[name];
-
-  if (!raw || !raw.trim()) {
-    return { name, ok: false, detail: "MISSING — not set in this environment" };
-  }
-
-  if (raw.includes("\n") && !raw.includes("\\n")) {
+function checkFirebaseCredentials(): Check {
+  const name = "Firebase Admin credentials";
+  try {
+    const creds = loadCredentials();
     return {
       name,
-      ok: false,
-      detail:
-        "contains real line breaks — must be a SINGLE LINE of JSON in Vercel",
+      ok: true,
+      detail: `valid via ${creds.source} — project: ${creds.projectId}, account: ${creds.clientEmail}`,
     };
-  }
-
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(raw);
   } catch (e) {
     return {
       name,
       ok: false,
-      detail: `not valid JSON (${e instanceof Error ? e.message : "parse error"})`,
+      detail: e instanceof Error ? e.message : "unknown error",
     };
   }
+}
 
-  const missing = ["project_id", "client_email", "private_key"].filter(
-    (f) => !parsed[f],
-  );
-  if (missing.length) {
-    return {
-      name,
-      ok: false,
-      detail: `valid JSON but missing field(s): ${missing.join(", ")}`,
-    };
-  }
-
-  const pk = String(parsed.private_key);
-  if (!pk.includes("BEGIN PRIVATE KEY")) {
-    return {
-      name,
-      ok: false,
-      detail: "private_key is malformed (no BEGIN PRIVATE KEY header)",
-    };
-  }
-
+function whichVarsAreSet(): Record<string, boolean> {
   return {
-    name,
-    ok: true,
-    detail: `valid — project_id: ${parsed.project_id}`,
+    FIREBASE_SERVICE_ACCOUNT_BASE64:
+      !!(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64 || "").trim(),
+    FIREBASE_SERVICE_ACCOUNT_KEY:
+      !!(process.env.FIREBASE_SERVICE_ACCOUNT_KEY || "").trim(),
+    FIREBASE_PROJECT_ID: !!(process.env.FIREBASE_PROJECT_ID || "").trim(),
+    FIREBASE_CLIENT_EMAIL: !!(process.env.FIREBASE_CLIENT_EMAIL || "").trim(),
+    FIREBASE_PRIVATE_KEY: !!(process.env.FIREBASE_PRIVATE_KEY || "").trim(),
   };
 }
 
 export default function handler(_req: VercelRequest, res: VercelResponse) {
   const checks: Check[] = [
-    checkServiceAccount(),
+    checkFirebaseCredentials(),
     checkPresent("IMAGEKIT_PRIVATE_KEY", "private_"),
     checkPresent("ADMIN_UIDS"),
     checkPresent("SHOPIFY_STORE_DOMAIN"),
@@ -102,8 +71,11 @@ export default function handler(_req: VercelRequest, res: VercelResponse) {
     status: allOk ? "ok" : "misconfigured",
     node: process.version,
     checks,
+    firebaseVarsPresent: whichVarsAreSet(),
     hint: allOk
       ? "All server environment variables look correct."
-      : "Fix the failing checks in Vercel -> Settings -> Environment Variables, then REDEPLOY (env changes need a fresh deploy).",
+      : "Fix the failing checks in Vercel -> Settings -> Environment Variables, " +
+        "then REDEPLOY. For Firebase, the most reliable option is " +
+        "FIREBASE_SERVICE_ACCOUNT_BASE64 — see SETUP.md.",
   });
 }
