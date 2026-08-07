@@ -57,15 +57,98 @@ so it only works once deployed to Vercel (or with `vercel dev` locally).
 ## 4. Vercel deployment
 
 Add every variable from `.env` to
-**Project → Settings → Environment Variables**.
+**Project → Settings → Environment Variables**, then redeploy.
 
-`FIREBASE_SERVICE_ACCOUNT_KEY` must be pasted as a **single line** of JSON.
+### Firebase Admin credentials — use the base64 variable
+
+Pasting raw JSON into a dashboard is fragile: browsers and chat apps
+silently convert straight quotes (`"`) into typographic quotes (`"` `"`),
+which makes `JSON.parse` fail with errors like:
+
+```
+Expected property name or '}' in JSON at position 1
+```
+
+To avoid this entirely, set **one** variable:
+
+```
+FIREBASE_SERVICE_ACCOUNT_BASE64=<the long base64 string from .env>
+```
+
+Base64 contains only `A–Z a–z 0–9 + / =`, so nothing can be silently
+mangled in transit.
+
+**If you ever need to regenerate it** (e.g. after rotating the key), run:
+
+```bash
+# macOS / Linux
+base64 -w0 serviceAccountKey.json
+
+# Windows PowerShell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("serviceAccountKey.json"))
+```
+
+### Alternative: three separate variables
+
+If you prefer not to use base64, set these three instead:
+
+```
+FIREBASE_PROJECT_ID=creator-drippr
+FIREBASE_CLIENT_EMAIL=firebase-adminsdk-fbsvc@creator-drippr.iam.gserviceaccount.com
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIE...\n-----END PRIVATE KEY-----\n"
+```
+
+Keep the surrounding double quotes on the private key and leave the `\n`
+sequences as literal backslash-n — the code converts them automatically.
+
+The server tries **base64 → separate vars → raw JSON**, using whichever it
+finds first.
 
 Then deploy:
 
 ```bash
 vercel --prod
 ```
+
+---
+
+## 5. Troubleshooting — `/api/health`
+
+Visit `https://<your-domain>/api/health` any time an API route misbehaves.
+It reports which variables are set and well-formed, without ever printing
+their values:
+
+```json
+{
+  "status": "ok",
+  "checks": [
+    { "name": "Firebase Admin credentials", "ok": true,
+      "detail": "valid via base64 — project: creator-drippr, …" }
+  ],
+  "firebaseVarsPresent": {
+    "FIREBASE_SERVICE_ACCOUNT_BASE64": true,
+    "FIREBASE_SERVICE_ACCOUNT_KEY": false
+  }
+}
+```
+
+If a JSON parse fails, the error now includes the exact Unicode code points
+of the first characters, so you can see immediately whether a smart quote
+(`U+201C`) or a zero-width character crept in.
+
+> **Environment variable changes require a redeploy.** Saving them in the
+> Vercel dashboard is not enough on its own.
+
+---
+
+## 6. Security note
+
+If a service-account private key has ever been pasted into a chat window,
+email, or shared document, treat it as compromised and rotate it:
+
+**Firebase Console → Project Settings → Service Accounts →
+Generate new private key**, then delete the old key from the
+**Google Cloud Console → IAM & Admin → Service Accounts → Keys** tab.
 
 ---
 

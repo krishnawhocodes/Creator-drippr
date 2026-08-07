@@ -38,24 +38,60 @@ function loadEnv() {
 
 loadEnv();
 
-const rawKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
-if (!rawKey) {
-  console.error("FIREBASE_SERVICE_ACCOUNT_KEY is missing from .env");
-  process.exit(1);
-}
+// Resolve credentials the same way the API functions do:
+// base64 → separate vars → raw JSON
+function loadServiceAccount() {
+  const b64 = (process.env.FIREBASE_SERVICE_ACCOUNT_BASE64 || "").trim();
+  if (b64) {
+    try {
+      return JSON.parse(Buffer.from(b64, "base64").toString("utf8"));
+    } catch (e) {
+      console.error("FIREBASE_SERVICE_ACCOUNT_BASE64 could not be decoded:", e.message);
+      process.exit(1);
+    }
+  }
 
-let serviceAccount;
-try {
-  serviceAccount = JSON.parse(rawKey);
-} catch {
+  const projectId = (process.env.FIREBASE_PROJECT_ID || "").trim();
+  const clientEmail = (process.env.FIREBASE_CLIENT_EMAIL || "").trim();
+  const privateKey = (process.env.FIREBASE_PRIVATE_KEY || "").trim();
+  if (projectId && clientEmail && privateKey) {
+    return {
+      project_id: projectId,
+      client_email: clientEmail,
+      private_key: privateKey.replace(/\\n/g, "\n").replace(/^"|"$/g, ""),
+    };
+  }
+
+  const rawKey = (process.env.FIREBASE_SERVICE_ACCOUNT_KEY || "").trim();
+  if (rawKey) {
+    try {
+      return JSON.parse(rawKey);
+    } catch (e) {
+      console.error(
+        "FIREBASE_SERVICE_ACCOUNT_KEY is not valid JSON:",
+        e.message,
+        "\nUse FIREBASE_SERVICE_ACCOUNT_BASE64 instead — it is paste-safe.",
+      );
+      process.exit(1);
+    }
+  }
+
   console.error(
-    "FIREBASE_SERVICE_ACCOUNT_KEY is not valid JSON.\n" +
-      "It must be on a SINGLE LINE in .env.",
+    "No Firebase credentials found in .env.\n" +
+      "Set FIREBASE_SERVICE_ACCOUNT_BASE64 (recommended).",
   );
   process.exit(1);
 }
 
-initializeApp({ credential: cert(serviceAccount) });
+const serviceAccount = loadServiceAccount();
+
+initializeApp({
+  credential: cert({
+    projectId: serviceAccount.project_id,
+    clientEmail: serviceAccount.client_email,
+    privateKey: String(serviceAccount.private_key).replace(/\\n/g, "\n"),
+  }),
+});
 const db = getFirestore();
 
 // Every field a creator document should have, with its default
