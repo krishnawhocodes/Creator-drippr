@@ -51,6 +51,19 @@ export async function fetchAnalytics(affiliateCode: string) {
 }
 
 /** Signed upload credentials for ImageKit. */
-export async function getImageKitAuth() {
+export async function getImageKitAuth(): Promise<{
+  token: string;
+  signature: string;
+  expire: number;
+}> {
   return authedFetch("/api/imagekit/auth");
+}
+
+/**
+ * Server configuration diagnostics.
+ * Visit /api/health directly in a browser for the same information.
+ */
+export async function checkServerHealth() {
+  const res = await fetch("/api/health");
+  return res.json();
 }

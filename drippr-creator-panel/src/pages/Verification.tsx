@@ -67,24 +67,46 @@ export default function Verification() {
   }
 
   async function uploadToImageKit(file: File): Promise<string> {
+    const publicKey = import.meta.env.VITE_IMAGEKIT_PUBLIC_KEY;
+
+    if (!publicKey) {
+      throw new Error(
+        "VITE_IMAGEKIT_PUBLIC_KEY is not set. Add it in Vercel and redeploy.",
+      );
+    }
+
+    // Get signed credentials from our serverless function
     const { token, signature, expire } = await getImageKitAuth();
+
     const fd = new FormData();
     fd.append("file", file);
-    fd.append("publicKey", import.meta.env.VITE_IMAGEKIT_PUBLIC_KEY);
+    fd.append("publicKey", publicKey);
     fd.append("signature", signature);
     fd.append("expire", String(expire));
     fd.append("token", token);
     fd.append("fileName", file.name);
     fd.append("folder", "/creator-id-proofs");
+    fd.append("useUniqueFileName", "true");
 
     const res = await fetch("https://upload.imagekit.io/api/v1/files/upload", {
       method: "POST",
       body: fd,
     });
 
-    if (!res.ok) throw new Error("File upload failed");
+    if (!res.ok) {
+      let detail = res.statusText;
+      try {
+        const body = await res.json();
+        detail = body?.message || detail;
+      } catch {
+        /* non-JSON response */
+      }
+      throw new Error(`ImageKit upload failed: ${detail}`);
+    }
+
     const data = await res.json();
-    return data.url;
+    if (!data?.url) throw new Error("ImageKit did not return a file URL.");
+    return data.url as string;
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -108,11 +130,22 @@ export default function Verification() {
 
     try {
       let idProofFileUrl = profile?.idProofFileUrl || "";
+      let uploadWarning = "";
 
       if (uploadedFile) {
         setUploading(true);
-        idProofFileUrl = await uploadToImageKit(uploadedFile);
-        setUploading(false);
+        try {
+          idProofFileUrl = await uploadToImageKit(uploadedFile);
+        } catch (uploadErr) {
+          // Don't block the whole verification on an upload failure —
+          // submit the text details and flag the upload issue.
+          uploadWarning =
+            uploadErr instanceof Error
+              ? uploadErr.message
+              : "File upload failed.";
+        } finally {
+          setUploading(false);
+        }
       }
 
       await updateDoc(doc(db, "creators", user.uid), {
@@ -124,7 +157,15 @@ export default function Verification() {
       });
 
       await refreshProfile();
-      setSuccess(true);
+
+      if (uploadWarning) {
+        setError(
+          `Your details were submitted, but the document upload failed: ${uploadWarning} ` +
+            `Please re-upload once this is resolved.`,
+        );
+      } else {
+        setSuccess(true);
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Submission failed.");
     } finally {

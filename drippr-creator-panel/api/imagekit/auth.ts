@@ -1,14 +1,10 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import crypto from "crypto";
-import { initializeApp, cert, getApps } from "firebase-admin/app";
-import { getAuth } from "firebase-admin/auth";
-
-if (!getApps().length) {
-  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY || "{}");
-  initializeApp({ credential: cert(serviceAccount) });
-}
-
-const adminAuth = getAuth();
+import {
+  requireUser,
+  errorResponse,
+  ConfigError,
+} from "../_lib/firebaseAdmin.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "GET") {
@@ -16,28 +12,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    // Verify user is authenticated
-    const authHeader = req.headers.authorization;
-    if (!authHeader?.startsWith("Bearer ")) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-    await adminAuth.verifyIdToken(authHeader.split("Bearer ")[1]);
+    // 1. Check ImageKit config FIRST so a missing key gives a clear message
+    const privateKey = (process.env.IMAGEKIT_PRIVATE_KEY || "").trim();
 
-    const privateKey = process.env.IMAGEKIT_PRIVATE_KEY;
     if (!privateKey) {
-      return res.status(500).json({ error: "ImageKit not configured" });
+      throw new ConfigError(
+        "IMAGEKIT_PRIVATE_KEY is not set in the environment. Add it in " +
+          "Vercel -> Settings -> Environment Variables and redeploy.",
+      );
     }
 
+    if (!privateKey.startsWith("private_")) {
+      throw new ConfigError(
+        'IMAGEKIT_PRIVATE_KEY looks wrong — it should start with "private_". ' +
+          "Make sure you did not paste the public key by mistake.",
+      );
+    }
+
+    // 2. Verify the caller is a signed-in user
+    await requireUser(req);
+
+    // 3. Generate the signed upload token
     const token = crypto.randomUUID();
-    const expire = Math.floor(Date.now() / 1000) + 2400; // 40 min
+    const expire = Math.floor(Date.now() / 1000) + 2400; // 40 minutes
     const signature = crypto
       .createHmac("sha1", privateKey)
       .update(token + expire)
       .digest("hex");
 
-    return res.json({ token, signature, expire });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Auth error";
-    return res.status(401).json({ error: message });
+    return res.status(200).json({ token, signature, expire });
+  } catch (e) {
+    const { status, body } = errorResponse(e);
+    // Log the full error so it shows up in Vercel function logs
+    console.error("[imagekit/auth]", body.code, body.error);
+    return res.status(status).json(body);
   }
 }

@@ -1,31 +1,27 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { initializeApp, cert, getApps } from "firebase-admin/app";
-import { getAuth } from "firebase-admin/auth";
-import { getFirestore } from "firebase-admin/firestore";
+import { requireUser, adminDb, errorResponse } from "../_lib/firebaseAdmin.js";
 
-if (!getApps().length) {
-  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY || "{}");
-  initializeApp({ credential: cert(serviceAccount) });
-}
-
-const adminAuth = getAuth();
-const db = getFirestore();
-
-const SHOPIFY_DOMAIN = process.env.SHOPIFY_STORE_DOMAIN || "";
-const SHOPIFY_TOKEN = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || "";
+const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || "2025-01";
 
 interface ShopifyOrder {
-  id: string;
+  id: number | string;
   name: string;
   created_at: string;
   total_price: string;
   currency: string;
-  financial_status: string;
+  financial_status: string | null;
   fulfillment_status: string | null;
   customer?: { first_name?: string; last_name?: string };
   line_items?: { quantity: number }[];
   discount_codes?: { code: string }[];
 }
+
+const EMPTY = {
+  totalOrders: 0,
+  totalRevenue: 0,
+  currencyCode: "INR",
+  orders: [],
+};
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "GET") {
@@ -33,59 +29,64 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    // Auth
-    const authHeader = req.headers.authorization;
-    if (!authHeader?.startsWith("Bearer ")) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-    const decoded = await adminAuth.verifyIdToken(authHeader.split("Bearer ")[1]);
+    const caller = await requireUser(req);
 
-    // Get the affiliate code from query
-    const code = (req.query.code as string || "").toUpperCase();
+    const code = String(req.query.code || "").toUpperCase().trim();
     if (!code) {
-      return res.status(400).json({ error: "code parameter required" });
+      return res.status(400).json({ error: "code parameter is required" });
     }
 
-    // Verify creator owns this code
-    const creatorDoc = await db.collection("creators").doc(decoded.uid).get();
-    if (!creatorDoc.exists) {
-      return res.status(404).json({ error: "Creator not found" });
-    }
-    const creatorData = creatorDoc.data();
-    if (creatorData?.affiliateCode?.toUpperCase() !== code) {
-      return res.status(403).json({ error: "Code mismatch" });
+    // Confirm the caller actually owns this affiliate code
+    const snap = await adminDb().collection("creators").doc(caller.uid).get();
+    if (!snap.exists) {
+      return res.status(404).json({ error: "Creator profile not found" });
     }
 
-    // Query Shopify orders with this discount code
-    if (!SHOPIFY_DOMAIN || !SHOPIFY_TOKEN) {
-      return res.json({
-        totalOrders: 0,
-        totalRevenue: 0,
-        currencyCode: "INR",
-        orders: [],
-      });
+    const ownCode = String(snap.data()?.affiliateCode || "").toUpperCase();
+    if (ownCode !== code) {
+      return res
+        .status(403)
+        .json({ error: "This affiliate code does not belong to you" });
     }
 
-    // Use REST API to fetch orders filtered by discount code
-    const url = `https://${SHOPIFY_DOMAIN}/admin/api/2024-01/orders.json?status=any&limit=250`;
+    const domain = (process.env.SHOPIFY_STORE_DOMAIN || "").trim();
+    const accessToken = (process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || "").trim();
+
+    // Not configured yet — return empty analytics rather than an error so the
+    // dashboard still renders cleanly.
+    if (!domain || !accessToken) {
+      console.warn("[analytics/shopify] Shopify env vars not configured");
+      return res.status(200).json(EMPTY);
+    }
+
+    const url =
+      `https://${domain}/admin/api/${SHOPIFY_API_VERSION}/orders.json` +
+      `?status=any&limit=250&fields=id,name,created_at,total_price,currency,` +
+      `financial_status,fulfillment_status,customer,line_items,discount_codes`;
+
     const shopifyRes = await fetch(url, {
       headers: {
-        "X-Shopify-Access-Token": SHOPIFY_TOKEN,
+        "X-Shopify-Access-Token": accessToken,
         "Content-Type": "application/json",
       },
     });
 
     if (!shopifyRes.ok) {
-      return res.status(502).json({ error: "Shopify API error" });
+      const text = await shopifyRes.text().catch(() => "");
+      console.error(
+        "[analytics/shopify] Shopify API error",
+        shopifyRes.status,
+        text.slice(0, 300),
+      );
+      return res.status(200).json(EMPTY);
     }
 
-    const shopifyData = await shopifyRes.json();
-    const allOrders: ShopifyOrder[] = shopifyData.orders || [];
+    const data = (await shopifyRes.json()) as { orders?: ShopifyOrder[] };
+    const all = data.orders || [];
 
-    // Filter orders that used this discount code
-    const matched = allOrders.filter((o) =>
-      o.discount_codes?.some(
-        (dc) => dc.code.toUpperCase() === code,
+    const matched = all.filter((o) =>
+      (o.discount_codes || []).some(
+        (dc) => String(dc.code || "").toUpperCase() === code,
       ),
     );
 
@@ -95,27 +96,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     );
 
     const orders = matched.map((o) => ({
-      orderId: o.id,
-      orderNumber: o.name.replace("#", ""),
+      orderId: String(o.id),
+      orderNumber: String(o.name || "").replace("#", ""),
       createdAt: o.created_at,
       totalPrice: o.total_price,
       currencyCode: o.currency || "INR",
-      customerName: [o.customer?.first_name, o.customer?.last_name]
-        .filter(Boolean)
-        .join(" ") || "Guest",
-      itemCount: o.line_items?.reduce((s, li) => s + li.quantity, 0) || 0,
+      customerName:
+        [o.customer?.first_name, o.customer?.last_name]
+          .filter(Boolean)
+          .join(" ") || "Guest",
+      itemCount: (o.line_items || []).reduce((s, li) => s + (li.quantity || 0), 0),
       financialStatus: o.financial_status || "unknown",
       fulfillmentStatus: o.fulfillment_status || "unfulfilled",
     }));
 
-    return res.json({
+    return res.status(200).json({
       totalOrders: matched.length,
       totalRevenue,
-      currencyCode: "INR",
+      currencyCode: orders[0]?.currencyCode || "INR",
       orders,
     });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Internal error";
-    return res.status(500).json({ error: message });
+  } catch (e) {
+    const { status, body } = errorResponse(e);
+    console.error("[analytics/shopify]", body.code, body.error);
+    return res.status(status).json(body);
   }
 }

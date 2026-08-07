@@ -71,13 +71,43 @@ vercel --prod
 
 ## Data model (Firestore collections)
 
-| Collection | Purpose |
-|---|---|
-| `creators` | One doc per creator, keyed by Firebase UID. Contains profile, verification status, and `affiliateCode`. |
-| `affiliateCodes` | Uniqueness index. **Doc ID is the code itself**, so duplicates are impossible. Contains `creatorUid`. |
-| `changeRequests` | Profile change requests from verified creators, awaiting admin approval. |
-| `supportTickets` | Support messages from creators, with admin replies. |
-| `payments` | Payout records (admin-written). |
+| Collection | Purpose | Created when |
+|---|---|---|
+| `creators` | One doc per creator, keyed by Firebase UID. Contains profile, verification status, and `affiliateCode`. | First registration |
+| `affiliateCodes` | Uniqueness index. **Doc ID is the code itself**, so duplicates are impossible. Contains `creatorUid`. | First creator approved |
+| `changeRequests` | Profile change requests from verified creators, awaiting admin approval. | First change request submitted |
+| `supportTickets` | Support messages from creators, with admin replies. | First support message sent |
+| `payments` | Payout records (admin-written). | First payout recorded |
+
+### ⚠️ Why you may not see all collections yet
+
+**Firestore creates collections lazily.** A collection only appears in the
+console once it contains at least one document. Empty collections do not
+exist as far as Firestore is concerned — this is normal behaviour, not a bug.
+
+So `affiliateCodes`, `changeRequests`, `supportTickets` and `payments` will
+be missing until the corresponding action happens for the first time.
+
+### Backfilling older creator documents
+
+Creators who registered **before** the latest update won't have the newer
+fields (`affiliateCode`, `bio`, `city`, `state`, etc.). Existing documents
+are never rewritten automatically.
+
+To patch them all at once:
+
+```bash
+npm run backfill
+```
+
+This:
+- adds any missing fields to every creator document (with safe defaults)
+- never overwrites existing values
+- rebuilds the `affiliateCodes` index from any codes already assigned
+- is safe to run as many times as you like
+
+Alternatively, for a single document you can just click **+ Add field** in
+the Firebase console and add `affiliateCode` as an empty string.
 
 ---
 
