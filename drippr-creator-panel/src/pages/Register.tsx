@@ -17,6 +17,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import PasswordStrength, {
   passwordPassesAll,
 } from "@/components/PasswordStrength";
+import { calculateCompletion } from "@/lib/profileCompletion";
 import type { CreatorProfile } from "@/types";
 
 export default function Register() {
@@ -69,10 +70,12 @@ export default function Register() {
         createdAt: Date.now(),
         updatedAt: Date.now(),
         verificationStatus: "pending",
+        platforms: [],
+        // Legacy single-platform fields, kept in sync for compatibility
         platform: "",
         profileLink: "",
-        contentNiche: "",
         followerCount: "",
+        contentNiche: "",
         idProofType: "",
         idProofNumber: "",
         idProofFileUrl: "",
@@ -80,7 +83,10 @@ export default function Register() {
         bio: "",
         city: "",
         state: "",
+        profileCompletion: 0,
       };
+
+      profile.profileCompletion = calculateCompletion(profile).percent;
 
       await setDoc(doc(db, "creators", cred.user.uid), profile);
       navigate("/dashboard");

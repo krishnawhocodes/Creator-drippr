@@ -103,6 +103,7 @@ const DEFAULTS = {
   verificationReviewedAt: null,
   verificationReviewedBy: "",
   verificationRejectionReason: "",
+  platforms: [],
   platform: "",
   profileLink: "",
   contentNiche: "",
@@ -115,7 +116,67 @@ const DEFAULTS = {
   state: "",
   phone: "",
   avatarUrl: "",
+  profileCompletion: 0,
 };
+
+/**
+ * Mirrors src/lib/profileCompletion.ts so backfilled documents get an
+ * accurate cached percentage.
+ */
+function calcCompletion(d) {
+  const has = (v) => (typeof v === "string" ? v.trim().length > 0 : !!v);
+
+  let platforms = Array.isArray(d.platforms) ? d.platforms : [];
+  if (!platforms.length && (d.platform || d.profileLink)) {
+    platforms = [
+      {
+        platform: d.platform || "",
+        profileLink: d.profileLink || "",
+        followerCount: d.followerCount || "",
+      },
+    ];
+  }
+
+  const hasValid = platforms.some(
+    (p) => has(p.platform) && has(p.profileLink) && has(p.followerCount),
+  );
+
+  const items = [
+    [8, has(d.fullName)],
+    [5, has(d.email)],
+    [7, has(d.phone)],
+    [18, hasValid],
+    [6, platforms.filter((p) => has(p.platform)).length >= 2],
+    [8, has(d.contentNiche)],
+    [8, has(d.idProofType)],
+    [8, has(d.idProofNumber)],
+    [12, has(d.idProofFileUrl)],
+    [6, has(d.bio)],
+    [4, has(d.city)],
+    [4, has(d.state)],
+    [6, d.verificationStatus === "approved"],
+  ];
+
+  const total = items.reduce((s, [w]) => s + w, 0);
+  const earned = items.reduce((s, [w, done]) => s + (done ? w : 0), 0);
+  return Math.round((earned / total) * 100);
+}
+
+/** Upgrades legacy single-platform documents into the platforms array. */
+function migratePlatforms(data) {
+  if (Array.isArray(data.platforms) && data.platforms.length) return null;
+  if (!data.platform && !data.profileLink) return null;
+
+  return [
+    {
+      id: `legacy_${Date.now()}`,
+      platform: data.platform || "",
+      handle: "",
+      profileLink: data.profileLink || "",
+      followerCount: data.followerCount || "",
+    },
+  ];
+}
 
 async function run() {
   console.log("Reading creators collection…\n");
@@ -142,6 +203,15 @@ async function run() {
 
     // Ensure the uid field matches the document id
     if (data.uid !== docSnap.id) patch.uid = docSnap.id;
+
+    // Migrate legacy single-platform data into the platforms array
+    const migrated = migratePlatforms(data);
+    if (migrated) patch.platforms = migrated;
+
+    // Always recompute the cached completion percentage
+    const merged = { ...data, ...patch };
+    const pct = calcCompletion(merged);
+    if (data.profileCompletion !== pct) patch.profileCompletion = pct;
 
     if (Object.keys(patch).length > 0) {
       await docSnap.ref.update(patch);

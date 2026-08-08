@@ -2,6 +2,11 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { listCreators } from "@/lib/adminDb";
 import { formatDate } from "@/lib/utils";
+import {
+  getPlatforms,
+  totalFollowers,
+  formatFollowerCount,
+} from "@/lib/platforms";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,6 +19,7 @@ import {
   ArrowRight,
   AlertCircle,
   CheckCircle2,
+  Users,
 } from "lucide-react";
 import type { CreatorProfile } from "@/types";
 
@@ -91,14 +97,15 @@ export default function VerifyCreators() {
                 </Badge>
               </CardHeader>
 
-              <CardContent className="pt-4">
+              <CardContent className="space-y-4 pt-4">
                 <div className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
-                  <Field label="Platform" value={c.platform || "—"} />
-                  <Field
-                    label="Followers"
-                    value={c.followerCount || "—"}
-                  />
                   <Field label="Niche" value={c.contentNiche || "—"} />
+                  <Field label="ID Type" value={c.idProofType || "—"} />
+                  <Field
+                    label="ID Number"
+                    value={c.idProofNumber || "—"}
+                    mono
+                  />
                   <Field
                     label="Submitted"
                     value={
@@ -107,32 +114,65 @@ export default function VerifyCreators() {
                         : "—"
                     }
                   />
-                  <Field
-                    label="ID Type"
-                    value={c.idProofType || "—"}
-                  />
-                  <Field
-                    label="ID Number"
-                    value={c.idProofNumber || "—"}
-                    mono
-                  />
-                  <div>
-                    <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
-                      Profile Link
-                    </p>
-                    {c.profileLink ? (
-                      <a
-                        href={c.profileLink}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="mt-0.5 inline-flex items-center gap-1 font-medium text-blue-600 hover:underline"
-                      >
-                        Open <ExternalLink className="h-3 w-3" />
-                      </a>
-                    ) : (
-                      <p className="mt-0.5 font-medium">—</p>
-                    )}
-                  </div>
+                </div>
+
+                {/* All platforms */}
+                {(() => {
+                  const platforms = getPlatforms(c);
+                  const reach = totalFollowers(platforms);
+                  return (
+                    <div className="rounded-lg border bg-gray-50/60 p-3">
+                      <div className="mb-2 flex items-center justify-between">
+                        <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                          Platforms ({platforms.length})
+                        </p>
+                        {reach > 0 && (
+                          <Badge variant="secondary" className="gap-1">
+                            <Users className="h-3 w-3" />
+                            {formatFollowerCount(reach)}
+                          </Badge>
+                        )}
+                      </div>
+                      {platforms.length ? (
+                        <div className="space-y-1.5">
+                          {platforms.map((p) => (
+                            <div
+                              key={p.id}
+                              className="flex flex-wrap items-center gap-2 text-sm"
+                            >
+                              <span className="font-medium">{p.platform}</span>
+                              {p.handle && (
+                                <span className="text-gray-500">
+                                  {p.handle}
+                                </span>
+                              )}
+                              <span className="text-gray-400">·</span>
+                              <span className="text-gray-600">
+                                {p.followerCount || "—"}
+                              </span>
+                              {p.profileLink && (
+                                <a
+                                  href={p.profileLink}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="ml-auto inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
+                                >
+                                  Open <ExternalLink className="h-3 w-3" />
+                                </a>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-amber-600">
+                          No platforms provided
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
                       ID Document
@@ -144,7 +184,7 @@ export default function VerifyCreators() {
                         rel="noreferrer"
                         className="mt-0.5 inline-flex items-center gap-1 font-medium text-blue-600 hover:underline"
                       >
-                        <FileText className="h-3.5 w-3.5" /> View
+                        <FileText className="h-3.5 w-3.5" /> View document
                       </a>
                     ) : (
                       <p className="mt-0.5 font-medium text-amber-600">
@@ -152,9 +192,7 @@ export default function VerifyCreators() {
                       </p>
                     )}
                   </div>
-                </div>
 
-                <div className="mt-5 flex justify-end">
                   <Button onClick={() => navigate(`/admin/creator/${c.uid}`)}>
                     <ShieldCheck className="mr-1.5 h-4 w-4" />
                     Review & Decide

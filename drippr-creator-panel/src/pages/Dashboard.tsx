@@ -3,7 +3,12 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/providers/AuthProvider";
 import { fetchAnalytics } from "@/lib/api";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import {
+  calculateCompletion,
+  completionLabel,
+} from "@/lib/profileCompletion";
 import { AreaChart, DonutChart } from "@/components/Charts";
+import { CompletionRing } from "@/components/AvatarRing";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,6 +25,7 @@ import {
   Clock,
   Sparkles,
   Package,
+  Circle,
 } from "lucide-react";
 import type { AffiliateAnalytics } from "@/types";
 
@@ -74,6 +80,8 @@ export default function Dashboard() {
 
     return buckets;
   }, [analytics]);
+
+  const completion = useMemo(() => calculateCompletion(profile), [profile]);
 
   const avgOrderValue =
     analytics && analytics.totalOrders > 0
@@ -205,6 +213,54 @@ export default function Dashboard() {
               >
                 <Share2 className="mr-1.5 h-4 w-4" /> Share
               </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Profile completion */}
+      {completion.percent < 100 && (
+        <Card>
+          <CardContent className="flex flex-wrap items-center gap-6 py-6">
+            <CompletionRing percent={completion.percent} size={104} />
+            <div className="min-w-[220px] flex-1">
+              <div className="flex items-center gap-2">
+                <h3 className="font-semibold">Complete your profile</h3>
+                <Badge variant="secondary" className="text-xs">
+                  {completionLabel(completion.percent)}
+                </Badge>
+              </div>
+              <p className="mt-0.5 text-sm text-gray-500">
+                Finish these to strengthen your creator profile.
+              </p>
+
+              <ul className="mt-3 grid gap-1.5 sm:grid-cols-2">
+                {completion.missing.slice(0, 4).map((item) => (
+                  <li
+                    key={item.key}
+                    className="flex items-center gap-2 text-sm text-gray-600"
+                  >
+                    <Circle className="h-3.5 w-3.5 flex-shrink-0 text-gray-300" />
+                    <span className="truncate">{item.label}</span>
+                    <span className="ml-auto flex-shrink-0 text-xs text-gray-400">
+                      +{item.weight}%
+                    </span>
+                  </li>
+                ))}
+              </ul>
+
+              <div className="mt-4 flex gap-2">
+                <Button size="sm" onClick={() => navigate("/verification")}>
+                  Complete verification
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => navigate("/settings")}
+                >
+                  Edit profile
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>

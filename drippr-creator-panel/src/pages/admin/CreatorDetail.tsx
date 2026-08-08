@@ -2,6 +2,13 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/providers/AuthProvider";
 import {
+  getPlatforms,
+  totalFollowers,
+  formatFollowerCount,
+} from "@/lib/platforms";
+import { calculateCompletion } from "@/lib/profileCompletion";
+import { PlatformsList } from "@/components/PlatformsEditor";
+import {
   getCreator,
   approveCreator,
   rejectCreator,
@@ -13,7 +20,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -35,6 +48,7 @@ import {
   Loader2,
   Copy,
   Check,
+  Users,
 } from "lucide-react";
 import type { CreatorProfile } from "@/types";
 
@@ -206,6 +220,10 @@ export default function CreatorDetail() {
     creator.verificationStatus === "submitted" ||
     creator.verificationStatus === "rejected";
 
+  const platforms = getPlatforms(creator);
+  const reach = totalFollowers(platforms);
+  const completion = calculateCompletion(creator);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -289,28 +307,25 @@ export default function CreatorDetail() {
           <Field label="Full Name" value={creator.fullName} />
           <Field label="Email" value={creator.email} />
           <Field label="Phone" value={creator.phone} />
-          <Field label="Platform" value={creator.platform} />
-          <Field label="Follower Count" value={creator.followerCount} />
           <Field label="Content Niche" value={creator.contentNiche} />
           <Field label="City" value={creator.city} />
           <Field label="State" value={creator.state} />
           <Field label="Joined" value={formatDate(creator.createdAt)} />
           <div className="min-w-0">
             <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
-              Profile Link
+              Profile Completion
             </p>
-            {creator.profileLink ? (
-              <a
-                href={creator.profileLink}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-0.5 inline-flex items-center gap-1 font-medium text-blue-600 hover:underline"
-              >
-                Open Profile <ExternalLink className="h-3 w-3" />
-              </a>
-            ) : (
-              <p className="mt-0.5 font-medium text-gray-400">—</p>
-            )}
+            <div className="mt-1.5 flex items-center gap-2">
+              <div className="h-2 w-24 overflow-hidden rounded-full bg-gray-200">
+                <div
+                  className="h-full rounded-full bg-zinc-900 transition-all"
+                  style={{ width: `${completion.percent}%` }}
+                />
+              </div>
+              <span className="text-sm font-semibold">
+                {completion.percent}%
+              </span>
+            </div>
           </div>
           {creator.bio && (
             <div className="sm:col-span-2 lg:col-span-3">
@@ -320,6 +335,29 @@ export default function CreatorDetail() {
               <p className="mt-0.5 text-sm">{creator.bio}</p>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Platforms */}
+      <Card>
+        <CardHeader className="flex flex-row items-start justify-between gap-3 pb-3">
+          <div>
+            <CardTitle className="text-base">
+              Social Platforms ({platforms.length})
+            </CardTitle>
+            <CardDescription>
+              Open each link to confirm it belongs to this creator.
+            </CardDescription>
+          </div>
+          {reach > 0 && (
+            <Badge variant="secondary" className="flex-shrink-0 gap-1.5">
+              <Users className="h-3 w-3" />
+              {formatFollowerCount(reach)} reach
+            </Badge>
+          )}
+        </CardHeader>
+        <CardContent>
+          <PlatformsList platforms={platforms} />
         </CardContent>
       </Card>
 

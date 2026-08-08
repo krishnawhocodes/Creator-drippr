@@ -27,12 +27,16 @@ import {
   ArrowRight,
   ClipboardCheck,
   AlertCircle,
+  PlusCircle,
+  MinusCircle,
+  PencilLine,
 } from "lucide-react";
-import type { ChangeRequest } from "@/types";
+import type { ChangeRequest, CreatorPlatform } from "@/types";
 
 const FIELD_LABELS: Record<string, string> = {
   fullName: "Full Name",
   phone: "Phone",
+  platforms: "Social Platforms",
   platform: "Platform",
   profileLink: "Profile Link",
   contentNiche: "Content Niche",
@@ -43,6 +47,167 @@ const FIELD_LABELS: Record<string, string> = {
   city: "City",
   state: "State",
 };
+
+function safeParsePlatforms(json?: string): CreatorPlatform[] {
+  if (!json) return [];
+  try {
+    const parsed = JSON.parse(json);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Side-by-side comparison of a creator's platform list. */
+function PlatformDiff({
+  before,
+  after,
+}: {
+  before?: string;
+  after: string;
+}) {
+  const oldList = safeParsePlatforms(before);
+  const newList = safeParsePlatforms(after);
+
+  const oldById = new Map(oldList.map((p) => [p.id, p]));
+  const newById = new Map(newList.map((p) => [p.id, p]));
+
+  const added = newList.filter((p) => !oldById.has(p.id));
+  const removed = oldList.filter((p) => !newById.has(p.id));
+  const modified = newList.filter((p) => {
+    const prev = oldById.get(p.id);
+    return prev && JSON.stringify(prev) !== JSON.stringify(p);
+  });
+
+  return (
+    <div className="overflow-hidden rounded-lg border">
+      <div className="flex items-center justify-between border-b bg-gray-50 px-4 py-2">
+        <span className="text-xs font-medium uppercase tracking-wide text-gray-500">
+          Social Platforms
+        </span>
+        <div className="flex gap-1.5">
+          {added.length > 0 && (
+            <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">
+              +{added.length} added
+            </Badge>
+          )}
+          {modified.length > 0 && (
+            <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">
+              {modified.length} edited
+            </Badge>
+          )}
+          {removed.length > 0 && (
+            <Badge className="bg-red-100 text-red-800 hover:bg-red-100">
+              −{removed.length} removed
+            </Badge>
+          )}
+        </div>
+      </div>
+
+      <div className="divide-y">
+        {added.map((p) => (
+          <PlatformRow key={`a-${p.id}`} p={p} kind="added" />
+        ))}
+        {modified.map((p) => (
+          <PlatformRow
+            key={`m-${p.id}`}
+            p={p}
+            prev={oldById.get(p.id)}
+            kind="modified"
+          />
+        ))}
+        {removed.map((p) => (
+          <PlatformRow key={`r-${p.id}`} p={p} kind="removed" />
+        ))}
+        {!added.length && !modified.length && !removed.length && (
+          <p className="px-4 py-3 text-sm text-gray-500">
+            No structural changes detected.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PlatformRow({
+  p,
+  prev,
+  kind,
+}: {
+  p: CreatorPlatform;
+  prev?: CreatorPlatform;
+  kind: "added" | "removed" | "modified";
+}) {
+  const style =
+    kind === "added"
+      ? "bg-emerald-50/60"
+      : kind === "removed"
+        ? "bg-red-50/60"
+        : "bg-blue-50/40";
+
+  const icon =
+    kind === "added" ? (
+      <PlusCircle className="h-4 w-4 text-emerald-600" />
+    ) : kind === "removed" ? (
+      <MinusCircle className="h-4 w-4 text-red-600" />
+    ) : (
+      <PencilLine className="h-4 w-4 text-blue-600" />
+    );
+
+  return (
+    <div className={`px-4 py-3 text-sm ${style}`}>
+      <div className="flex items-start gap-2">
+        <span className="mt-0.5 flex-shrink-0">{icon}</span>
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold">
+            {p.platform}
+            {p.handle && (
+              <span className="ml-1.5 font-normal text-gray-600">
+                {p.handle}
+              </span>
+            )}
+          </p>
+
+          {kind === "modified" && prev ? (
+            <div className="mt-1.5 space-y-1 text-xs">
+              {(["handle", "profileLink", "followerCount"] as const).map(
+                (f) =>
+                  prev[f] !== p[f] ? (
+                    <div key={f} className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-gray-400">{f}:</span>
+                      <span className="text-gray-500 line-through">
+                        {prev[f] || "—"}
+                      </span>
+                      <ArrowRight className="h-3 w-3 text-gray-400" />
+                      <span className="font-medium text-emerald-700">
+                        {p[f] || "—"}
+                      </span>
+                    </div>
+                  ) : null,
+              )}
+            </div>
+          ) : (
+            <>
+              {p.profileLink && (
+                <a
+                  href={p.profileLink}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-0.5 block break-all text-xs text-blue-600 hover:underline"
+                >
+                  {p.profileLink}
+                </a>
+              )}
+              <p className="mt-0.5 text-xs text-gray-500">
+                {p.followerCount || "—"} followers
+              </p>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 type Tab = "pending" | "approved" | "rejected";
 
@@ -199,37 +364,35 @@ export default function ReviewQueue() {
                   </div>
                 )}
 
-                {/* Diff table */}
-                <div className="overflow-hidden rounded-lg border">
-                  <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 border-b bg-gray-50 px-4 py-2 text-xs font-medium uppercase tracking-wide text-gray-500">
-                    <span>Current</span>
-                    <span />
-                    <span>Requested</span>
-                  </div>
-                  {Object.entries(req.changes).map(([field, newVal]) => (
-                    <div
-                      key={field}
-                      className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 border-b px-4 py-3 text-sm last:border-b-0"
-                    >
-                      <div className="min-w-0">
-                        <p className="text-xs text-gray-400">
+                {/* Diff */}
+                <div className="space-y-3">
+                  {Object.entries(req.changes).map(([field, newVal]) =>
+                    field === "platforms" ? (
+                      <PlatformDiff
+                        key={field}
+                        before={req.previous?.[field]}
+                        after={newVal}
+                      />
+                    ) : (
+                      <div
+                        key={field}
+                        className="overflow-hidden rounded-lg border"
+                      >
+                        <div className="border-b bg-gray-50 px-4 py-2 text-xs font-medium uppercase tracking-wide text-gray-500">
                           {FIELD_LABELS[field] || field}
-                        </p>
-                        <p className="truncate text-gray-500 line-through">
-                          {req.previous?.[field] || "—"}
-                        </p>
+                        </div>
+                        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 px-4 py-3 text-sm">
+                          <p className="min-w-0 break-words text-gray-500 line-through">
+                            {req.previous?.[field] || "—"}
+                          </p>
+                          <ArrowRight className="h-4 w-4 flex-shrink-0 text-gray-400" />
+                          <p className="min-w-0 break-words font-medium text-emerald-700">
+                            {newVal || "—"}
+                          </p>
+                        </div>
                       </div>
-                      <ArrowRight className="h-4 w-4 flex-shrink-0 text-gray-400" />
-                      <div className="min-w-0">
-                        <p className="text-xs text-gray-400">
-                          {FIELD_LABELS[field] || field}
-                        </p>
-                        <p className="truncate font-medium text-emerald-700">
-                          {newVal || "—"}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
+                    ),
+                  )}
                 </div>
 
                 {req.status === "rejected" && req.rejectionReason && (

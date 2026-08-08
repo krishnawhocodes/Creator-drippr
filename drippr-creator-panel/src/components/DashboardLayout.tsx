@@ -1,7 +1,11 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "@/providers/AuthProvider";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import {
+  calculateCompletion,
+  completionColor,
+} from "@/lib/profileCompletion";
+import AvatarRing from "@/components/AvatarRing";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import {
@@ -35,6 +39,7 @@ const NAV = [
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const { profile, isAdmin } = useAuth();
+  const completion = useMemo(() => calculateCompletion(profile), [profile]);
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -85,15 +90,35 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         )}
       </nav>
 
-      {/* Affiliate code footer */}
-      {profile?.affiliateCode ? (
-        <div className="flex-shrink-0 border-t border-white/10 px-4 py-4">
-          <div className="text-xs text-white/40">Affiliate Code</div>
-          <div className="mt-1 font-mono text-sm font-semibold text-white">
-            {profile.affiliateCode}
+      {/* Footer: completion + affiliate code */}
+      <div className="flex-shrink-0 space-y-3 border-t border-white/10 px-4 py-4">
+        <div>
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-white/40">Profile completion</span>
+            <span className="font-semibold text-white">
+              {completion.percent}%
+            </span>
+          </div>
+          <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/10">
+            <div
+              className="h-full rounded-full transition-all duration-500"
+              style={{
+                width: `${completion.percent}%`,
+                backgroundColor: completionColor(completion.percent),
+              }}
+            />
           </div>
         </div>
-      ) : null}
+
+        {profile?.affiliateCode && (
+          <div className="border-t border-white/10 pt-3">
+            <div className="text-xs text-white/40">Affiliate Code</div>
+            <div className="mt-1 font-mono text-sm font-semibold text-white">
+              {profile.affiliateCode}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -112,6 +137,8 @@ export default function DashboardLayout() {
         .toUpperCase()
         .slice(0, 2)
     : user?.email?.charAt(0).toUpperCase() || "?";
+
+  const completion = useMemo(() => calculateCompletion(profile), [profile]);
 
   async function handleSignOut() {
     await signOut();
@@ -150,14 +177,21 @@ export default function DashboardLayout() {
         <header className="flex h-16 flex-shrink-0 items-center justify-end border-b bg-white px-6">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-gray-100">
-                <Avatar className="h-8 w-8">
-                  <AvatarFallback className="bg-zinc-900 text-xs text-white">
-                    {initials}
-                  </AvatarFallback>
-                </Avatar>
-                <span className="hidden max-w-[200px] truncate font-medium md:inline">
-                  {profile?.fullName || user?.email}
+              <button className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm hover:bg-gray-100">
+                <AvatarRing
+                  percent={completion.percent}
+                  initials={initials}
+                  imageUrl={profile?.avatarUrl}
+                  size={40}
+                  thickness={3}
+                />
+                <span className="hidden text-left md:block">
+                  <span className="block max-w-[200px] truncate font-medium leading-tight">
+                    {profile?.fullName || user?.email}
+                  </span>
+                  <span className="block text-xs leading-tight text-gray-500">
+                    Profile {completion.percent}% complete
+                  </span>
                 </span>
                 <ChevronDown className="h-4 w-4 flex-shrink-0 text-gray-500" />
               </button>

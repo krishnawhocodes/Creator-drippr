@@ -174,11 +174,31 @@ export async function approveChangeRequest(
   request: ChangeRequest,
   reviewerEmail: string,
 ): Promise<void> {
-  // Apply the requested field changes to the creator record
-  await updateDoc(doc(db, "creators", request.creatorUid), {
-    ...request.changes,
-    updatedAt: Date.now(),
+  // Build the patch, deserialising any JSON-encoded complex fields
+  const patch: Record<string, unknown> = {};
+
+  Object.entries(request.changes).forEach(([field, value]) => {
+    if (field === "platforms") {
+      try {
+        const parsed = JSON.parse(value);
+        patch.platforms = parsed;
+
+        // Keep the legacy single-platform fields in sync
+        const primary = Array.isArray(parsed) ? parsed[0] : null;
+        patch.platform = primary?.platform || "";
+        patch.profileLink = primary?.profileLink || "";
+        patch.followerCount = primary?.followerCount || "";
+      } catch {
+        // Malformed payload — skip rather than corrupt the record
+      }
+    } else {
+      patch[field] = value;
+    }
   });
+
+  patch.updatedAt = Date.now();
+
+  await updateDoc(doc(db, "creators", request.creatorUid), patch);
 
   await updateDoc(doc(db, "changeRequests", request.id), {
     status: "approved",

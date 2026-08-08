@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { listCreators } from "@/lib/adminDb";
 import { formatDate } from "@/lib/utils";
+import { getPlatforms, summarisePlatforms } from "@/lib/platforms";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -85,16 +86,19 @@ export default function CreatorList() {
       "Status",
       "Joined",
     ];
-    const rows = filtered.map((c) => [
-      c.fullName,
-      c.email,
-      c.phone,
-      c.platform,
-      c.followerCount,
-      c.affiliateCode || "",
-      c.verificationStatus,
-      new Date(c.createdAt).toISOString().slice(0, 10),
-    ]);
+    const rows = filtered.map((c) => {
+      const ps = getPlatforms(c);
+      return [
+        c.fullName,
+        c.email,
+        c.phone,
+        ps.map((p) => `${p.platform}:${p.handle}`).join(" | "),
+        ps.map((p) => p.followerCount).join(" | "),
+        c.affiliateCode || "",
+        c.verificationStatus,
+        new Date(c.createdAt).toISOString().slice(0, 10),
+      ];
+    });
     const csv = [headers, ...rows]
       .map((r) => r.map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(","))
       .join("\n");
@@ -207,7 +211,9 @@ export default function CreatorList() {
                       <TableCell className="text-sm text-gray-600">
                         {c.email}
                       </TableCell>
-                      <TableCell>{c.platform || "—"}</TableCell>
+                      <TableCell className="text-sm">
+                        {summarisePlatforms(getPlatforms(c))}
+                      </TableCell>
                       <TableCell>
                         {c.affiliateCode ? (
                           <code className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs font-semibold">
