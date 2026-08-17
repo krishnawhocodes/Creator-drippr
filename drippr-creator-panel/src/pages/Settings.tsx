@@ -8,6 +8,7 @@ import {
 import { db, auth } from "@/lib/firebase";
 import { useAuth } from "@/providers/AuthProvider";
 import { createChangeRequest, createSupportTicket } from "@/lib/adminDb";
+import { useKeyboardAwareScroll } from "@/lib/useBodyScrollLock";
 import {
   getPlatforms,
   validatePlatforms,
@@ -68,6 +69,8 @@ const FIELD_LABELS: Record<string, string> = {
 export default function Settings() {
   const { user, profile, refreshProfile } = useAuth();
   const isVerified = profile?.verificationStatus === "approved";
+
+  useKeyboardAwareScroll();
 
   const [form, setForm] = useState({
     fullName: profile?.fullName || "",

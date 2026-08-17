@@ -3,6 +3,7 @@ import { doc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/providers/AuthProvider";
 import { getImageKitAuth } from "@/lib/api";
+import { useKeyboardAwareScroll } from "@/lib/useBodyScrollLock";
 import {
   getPlatforms,
   validatePlatforms,
@@ -56,6 +57,8 @@ const ID_PROOF_TYPES = [
 export default function Verification() {
   const { user, profile, refreshProfile } = useAuth();
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useKeyboardAwareScroll();
 
   const [platforms, setPlatforms] = useState<CreatorPlatform[]>(() => {
     const existing = getPlatforms(profile);

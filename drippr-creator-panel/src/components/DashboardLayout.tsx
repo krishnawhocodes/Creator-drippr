@@ -6,6 +6,7 @@ import {
   completionColor,
 } from "@/lib/profileCompletion";
 import AvatarRing from "@/components/AvatarRing";
+import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import {
@@ -140,15 +141,17 @@ export default function DashboardLayout() {
 
   const completion = useMemo(() => calculateCompletion(profile), [profile]);
 
+  useBodyScrollLock();
+
   async function handleSignOut() {
     await signOut();
     navigate("/login");
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50">
+    <div className="flex h-[100dvh] overflow-hidden bg-gray-50">
       {/* Desktop sidebar */}
-      <aside className="hidden h-screen w-64 flex-shrink-0 overflow-hidden bg-zinc-900 lg:block">
+      <aside className="hidden h-[100dvh] w-64 flex-shrink-0 overflow-hidden bg-zinc-900 lg:block">
         <SidebarContent />
       </aside>
 
@@ -172,7 +175,7 @@ export default function DashboardLayout() {
       </Sheet>
 
       {/* Main column */}
-      <div className="flex h-screen min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="flex h-[100dvh] min-w-0 flex-1 flex-col overflow-hidden">
         {/* Top bar */}
         <header className="flex h-16 flex-shrink-0 items-center justify-end border-b bg-white px-6">
           <DropdownMenu>

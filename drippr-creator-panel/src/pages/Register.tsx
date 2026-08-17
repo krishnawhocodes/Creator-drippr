@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useKeyboardAwareScroll } from "@/lib/useBodyScrollLock";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
@@ -21,6 +22,8 @@ import { calculateCompletion } from "@/lib/profileCompletion";
 import type { CreatorProfile } from "@/types";
 
 export default function Register() {
+  useKeyboardAwareScroll();
+
   const navigate = useNavigate();
   const [form, setForm] = useState({
     fullName: "",
@@ -103,8 +106,8 @@ export default function Register() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
-      <Card className="w-full max-w-md">
+    <div className="flex min-h-[100dvh] w-full items-start justify-center overflow-y-auto bg-gray-50 px-4 py-8 sm:items-center sm:py-12">
+      <Card className="my-auto w-full max-w-md">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl font-bold">
             Join <span className="tracking-tight">Drippr</span> as a Creator

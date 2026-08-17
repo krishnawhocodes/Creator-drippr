@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "@/providers/AuthProvider";
+import { useBodyScrollLock } from "@/lib/useBodyScrollLock";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -87,14 +88,16 @@ export default function AdminLayout() {
   const navigate = useNavigate();
   const [sheetOpen, setSheetOpen] = useState(false);
 
+  useBodyScrollLock();
+
   async function handleSignOut() {
     await signOut();
     navigate("/login");
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50">
-      <aside className="hidden h-screen w-64 flex-shrink-0 overflow-hidden bg-zinc-900 lg:block">
+    <div className="flex h-[100dvh] overflow-hidden bg-gray-50">
+      <aside className="hidden h-[100dvh] w-64 flex-shrink-0 overflow-hidden bg-zinc-900 lg:block">
         <SidebarContent />
       </aside>
 
@@ -116,7 +119,7 @@ export default function AdminLayout() {
         </SheetContent>
       </Sheet>
 
-      <div className="flex h-screen min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="flex h-[100dvh] min-w-0 flex-1 flex-col overflow-hidden">
         <header className="flex h-16 flex-shrink-0 items-center justify-end border-b bg-white px-6">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

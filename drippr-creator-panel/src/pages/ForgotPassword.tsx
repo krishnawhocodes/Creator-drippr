@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { useKeyboardAwareScroll } from "@/lib/useBodyScrollLock";
 import { sendPasswordResetEmail } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,8 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export default function ForgotPassword() {
+  useKeyboardAwareScroll();
+
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
@@ -41,8 +44,8 @@ export default function ForgotPassword() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
-      <Card className="w-full max-w-md">
+    <div className="flex min-h-[100dvh] w-full items-start justify-center overflow-y-auto bg-gray-50 px-4 py-8 sm:items-center sm:py-12">
+      <Card className="my-auto w-full max-w-md">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl font-bold">Reset Password</CardTitle>
           <CardDescription>

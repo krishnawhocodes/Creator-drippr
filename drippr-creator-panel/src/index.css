@@ -33,14 +33,40 @@
   html,
   body,
   #root {
-    height: 100%;
-    overflow: hidden;
+    /* min-height, NOT height — lets short pages grow and stay scrollable
+       when the mobile keyboard shrinks the viewport. */
+    min-height: 100%;
   }
 
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "rlig" 1, "calt" 1;
     margin: 0;
+  }
+
+  /*
+   * Applied to <body> only while a dashboard/admin shell is mounted.
+   * Those layouts manage their own internal scroll regions, so the page
+   * itself must not scroll. Auth pages never get this class, so they
+   * scroll normally — which is what the mobile keyboard needs.
+   */
+  body.app-shell-locked {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body.app-shell-locked #root {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  /* Avoid iOS zooming in when a field is focused */
+  @media (max-width: 640px) {
+    input,
+    select,
+    textarea {
+      font-size: 16px;
+    }
   }
 }
 
