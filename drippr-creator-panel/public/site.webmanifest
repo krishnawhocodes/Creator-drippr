@@ -1,0 +1,17 @@
+{
+  "name": "Drippr Creator Panel",
+  "short_name": "Drippr",
+  "description": "Manage your creator profile, affiliate code, and earnings.",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#09090b",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "1563x1563",
+      "type": "image/png"
+    }
+  ]
+}
